@@ -12,17 +12,18 @@ process.on('exit', function(code) {
   console.log("About to exit");
 });
 
-client.definitionHandlers.attachOnce('GCSReceiver', function(definition) {
-  client.updateHandlers.attachOnce('GCSReceiver', function(uav) {
-    console.log(uav);
-  });
-  client.connection.sendRequest('GCSReceiver');
-});
-
-client.definitionHandlers.attachOnce('GCSReceiverMeta', function(definition) {
-});
-
-client.definitionHandlers.attachOnce('ManualControlCommand', function(definition) {
-});
+client.requireDefinitions(['GCSReceiver', 'GCSReceiverMeta', 'ManualControlCommand']).then(
+  function(definitions) {
+    console.log('all definitions', definitions);
+    return client.requestValuesForUavs(['GCSReceiver', 'GCSReceiverMeta', 'ManualControlCommand']);
+  }
+).then(
+  function(values) {
+    console.log(values);
+  },
+  function(errors) {
+    console.log(errors);
+  }
+);
 
 client.connect();

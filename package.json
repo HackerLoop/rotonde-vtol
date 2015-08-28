@@ -9,6 +9,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "skybot-client": "git+ssh://git@github.com/openskybot/skybot-client.js.git"
-  }
+    "promise": "^7.0.4",
+    "skybot-client": "file:../skybot-client.js/"
+  },
+  "skybot-client": "git+ssh://git@github.com/openskybot/skybot-client.js.git"
 }
