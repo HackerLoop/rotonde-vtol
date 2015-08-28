@@ -1,0 +1,31 @@
+// update
+{
+  "type":"update",
+  "payload":
+    {
+      "objectId": 42424242,
+      "data":
+        {
+          "takeoff":true,
+          "forward":0,
+          "left":0,
+          "up":0
+        }
+    }
+}
+
+// request
+{
+  "type": "req",
+  "payload": {
+    "objectId": 42424242
+  }
+}
+
+// subscribe
+{
+  "type": "sub",
+  "payload": {
+    "objectId": 42424242
+  }
+}

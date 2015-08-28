@@ -12,9 +12,9 @@ var client = Client('ws://127.0.0.1:4224/uav', {debug: false});
 client.onReady(function() {
   client.connection.sendDefinition(SkybotDefinition);
   client.updateHandlers.attach('SkybotControl', onUpdate);
+  client.requestHandlers.attach('SkybotControl', onRequest);
   client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings']).then(
     function(values) {
-      console.log(values);
       initialMCS = values[1];
     },
     function(errors) {
@@ -38,7 +38,7 @@ function setupGCSControl() {
 }
 
 /**
- *  Skybot module
+ *  Skybot module definition and default value
  */
 
 var skybotStatuses = {
@@ -89,6 +89,11 @@ var skybotValue = {
   up: 0,
 };
 
+function updateSkybotValue(newValue) {
+  _.extend(skybotValue, newValue);
+  client.connection.sendUpdate('SkybotControl', skybotValue);
+}
+
 // holds the initial manualcontrolsettings, needed to revert it when leaving control
 var initialMCS;
 
@@ -98,34 +103,48 @@ function capitalize(s) {
 
 /**
  *  UAVO update change handlers
+ *  return true to signal change in uavo
  */
 function onForward(v) {
   console.log('onForward ' + v);
+  return true;
 }
 
 function onLeft(v) {
   console.log('onLeft ' + v);
+  return true;
 }
 
 function onUp(v) {
   console.log('onUp ' + v);
+  return true;
 }
 
 function onTakeoff(v) {
   console.log('onTakeoff ' + v);
+  return true;
+}
+
+function mockWork() {
+  updateSkybotValue({status: skybotStatuses.WORKING});
+  setTimeout(function() {
+    updateSkybotValue({status: skybotStatuses.OK});
+  }, 3000);
 }
 
 /**
  *  change listeners
  */
 var lastUpdate = -1;
-var rwKeys = ['forward', 'left', 'status', 'takeoff', 'up'];
+var rwKeys = ['forward', 'left', 'takeoff', 'up'];
 function onUpdate(uavo) {
   if (skybotValue.status !== skybotStatuses.OK) {
     return;
   }
   uavo = uavo.data;
 
+  // call handlers for writable keys (rwKeys) on change
+  var updated = false;
   _.forEach(rwKeys, function(key) {
     if (_.isUndefined(uavo[key])) {
       return;
@@ -133,10 +152,19 @@ function onUpdate(uavo) {
 
     if (skybotValue[key] != uavo[key]) {
       var fnName = 'on' + capitalize(key);
-      var fn = eval(fnName);
+      var fn = eval(fnName); // :(
 
-      fn(uavo[key]);
       skybotValue[key] = uavo[key];
+      updated |= fn(uavo[key]);
     }
   });
+  // if anything change fake working
+  if (updated) {
+    mockWork();
+  }
+}
+
+// respond to requests
+function onRequest() {
+  client.connection.sendUpdate('SkybotControl', skybotValue);
 }
