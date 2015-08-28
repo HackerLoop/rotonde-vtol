@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "lodash": "^3.10.1",
     "promise": "^7.0.4",
     "skybot-client": "file:../skybot-client.js/"
   },
