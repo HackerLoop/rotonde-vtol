@@ -1,0 +1,14 @@
+{
+  "name": "skybot-modules",
+  "version": "1.0.0",
+  "description": "",
+  "main": "skybot.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "skybot-client": "git+ssh://git@github.com/openskybot/skybot-client.js.git"
+  }
+}
