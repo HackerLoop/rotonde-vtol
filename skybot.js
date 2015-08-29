@@ -1,5 +1,7 @@
 'use strict';
 
+var MOCK_STATES = true;
+
 var MODULE_NAME = 'SkybotControl';
 var MAX_UPDATELESS_TIME = 1000;
 var SKYBOT_ID = 42424242;
@@ -110,6 +112,8 @@ client.onReady(function() {
       _.forEach(values, function(value) {
         uavwatcher.addOrUpdateUAV(value.objectId, value.data);
       });
+
+      initStates();
     },
     function(errors) {
       console.log(errors);
@@ -125,156 +129,30 @@ process.on('exit', function(code) {
 client.connect();
 
 /**
- *  State management
+ *  State machine management
  */
 
-var States = {};
+var machine;
 
-States.Idle = (function() {
-  return {
-    start: function() {
-      var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-      uavwatcher.addOrUpdateUAV(SKYBOT_ID, _.extend(initialSkybotValue, {status: skybotValue.status}));
-    }
-  };
-})();
+function initStates() {
+  var createStates = (MOCK_STATES ? require('./mock_states') : require('./states'));
+  var States = createStates(SKYBOT_ID, initialSkybotValue, uavwatcher, states, statuses, controlTypes);
 
-States.TakingOff = (function() {
-  var working = false;
-  return {
-    priority: 10,
-    canTrigger: function() {
-      var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-      return skybotValue.status === statuses.CONNECTED &&
-             skybotValue.takeoff === true &&
-             skybotValue.state === states.IDLE;
-    },
-    start: function() {
-      uavwatcher.addOrUpdateUAV(SKYBOT_ID, {state: states.TAKINGOFF, forward: 0, left: 0, up: 0});
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 3000);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-})();
+  machine = StateMachine.newMachine();
+  machine.addState(States.Idle);
+  machine.addState(States.TakingOff);
+  machine.addState(States.Landing);
+  machine.addState(States.Loitering);
+  machine.addState(States.Waiting);
+  machine.addState(States.GoingTo);
 
-States.Landing = (function() {
-  var working = false;
-  return {
-    priority: 10,
-    canTrigger: function() {
-      var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-      return (
-              (skybotValue.status === statuses.CONNECTED && skybotValue.takeoff === false) ||
-              skybotValue.status === statuses.IDLE
-             ) &&
-             skybotValue.state !== states.IDLE &&
-             skybotValue.state !== states.LANDING;
-    },
-    start: function() {
-      uavwatcher.addOrUpdateUAV(SKYBOT_ID, {state: states.LANDING, takeoff: false, forward: 0, left: 0, up: 0}, true);
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 3000);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-
-})();
-
-States.Loitering = (function() {
-  var working = false;
-  return {
-    priority: 5,
-    canTrigger: function() {
-      var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-      return skybotValue.controlType === controlTypes.LOITER &&
-             skybotValue.status === statuses.CONNECTED &&
-             skybotValue.takeoff === true &&
-             skybotValue.state === states.WAITING &&
-             skybotValue.forward !== 0 && skybotValue.left !== 0 && skybotValue.up !== 0;
-    },
-    start: function() {
-      uavwatcher.addOrUpdateUAV(SKYBOT_ID, {state: states.LOITERING}, true);
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 1000);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-      uavwatcher.addOrUpdateUAV(SKYBOT_ID, {forward: 0, left: 0, up: 0});
-    }
-  };
-
-})();
-
-States.GoingTo = (function() {
-  var working = false;
-  return {
-    priority: 5,
-    canTrigger: function() {
-      var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-      return skybotValue.controlType === controlTypes.GOTO &&
-             skybotValue.status === statuses.CONNECTED &&
-             skybotValue.takeoff === true &&
-             skybotValue.state === states.WAITING;
-    },
-    start: function() {
-      uavwatcher.addOrUpdateUAV(SKYBOT_ID, {state: states.GOINGTO}, true);
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 10000);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-})();
-
-States.Waiting = (function() {
-  return {
-    priority: 1,
-    canTrigger: function() {
-      var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-      return skybotValue.status === statuses.CONNECTED &&
-             skybotValue.takeoff === true;
-    },
-    start: function() {
-      uavwatcher.addOrUpdateUAV(SKYBOT_ID, {state: states.WAITING, forward: 0, left: 0, up: 0}, true);
-    },
-  };
-})();
-
-var machine = StateMachine.newMachine();
-machine.addState(States.Idle);
-machine.addState(States.TakingOff);
-machine.addState(States.Landing);
-machine.addState(States.Loitering);
-machine.addState(States.Waiting);
-machine.addState(States.GoingTo);
+  setInterval(work, 50);
+}
 
 function work() {
   machine.update();
   undirtyWatcherAndSend();
 };
-setInterval(work, 50);
 
 function undirtyWatcherAndSend() {
   uavwatcher.forEachDirty(function(container) {
@@ -283,18 +161,10 @@ function undirtyWatcherAndSend() {
   });
 }
 
-// should only be called by the current state
-States.currentStateEnd = function() {
-  if (States.nextState !== States.Cu) {
-    States.currentState = States.nextState;
-  } else {
-    States.currentState = States.Idle;
-  }
-};
-
 /**
  *  Watchdog
  */
+
 var lastUpdate = -1; // watchdog, tracks last update received as a UNIX timestamp,
                      // triggers IDLE status when exceeds MAX_UPDATELESS_TIME seconds
 setInterval(function() {
@@ -313,6 +183,7 @@ setInterval(function() {
 /**
  *  change listeners
  */
+
 function onUpdate(uavo) {
   lastUpdate = new Date().getTime();
 
