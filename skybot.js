@@ -1,6 +1,6 @@
 'use strict';
 
-var MOCK_STATES = true;
+var MOCK_STATES = false;
 
 var MODULE_NAME = 'SkybotControl';
 var MAX_UPDATELESS_TIME = 1000;
@@ -108,7 +108,7 @@ client.onReady(function() {
   uavwatcher = new UAVWatcher(client.definitionsStore);
   uavwatcher.addOrUpdateUAV(SKYBOT_ID, initialSkybotValue);
 
-  client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings']).then(
+  client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings', 'FlightStatus']).then(
     function(values) {
       // load initial values for the requested uavs
       _.forEach(values, function(value) {
@@ -116,6 +116,8 @@ client.onReady(function() {
       });
 
       initStates();
+
+      console.log('Started');
 
     },
     function(errors) {
@@ -126,7 +128,7 @@ client.onReady(function() {
 });
 
 process.on('exit', function(code) {
-  console.log("About to exit");
+  console.log('About to exit');
 });
 
 client.connect();
@@ -315,15 +317,41 @@ States.Idle = (function() {
 })();
 
 States.TakingOff = (function() {
+  var steps = {
+    SETUP_GCS: 'SETUP_GCS',
+    ZERO_THROTTLE: 'ZERO_THROTTLE',
+    STABILIZED_MOD: 'STABILIZED_MOD',
+    TEST_ACTUATORS: 'TEST_ACTUATORS',
+  };
+  var step = steps.SETUP_GCS;
+
   return {
     priority: 10,
     canTrigger: function() {
       return shouldTakeOff();
     },
     start: function() {
+      step = steps.SETUP_GCS;
       uavwatcher.addOrUpdateUAV(SKYBOT_ID, {state: states.TAKINGOFF, forward: 0, left: 0, up: 0});
     },
     update: function() {
+      switch(step) {
+      case steps.SETUP_GCS:
+        gcsControl();
+        step = steps.ZERO_THROTTLE;
+        break;
+      case steps.ZERO_THROTTLE:
+        gcsReceiverChannel(0, -1);
+        step = steps.STABILIZED_MOD;
+        break;
+      case steps.STABILIZED_MOD:
+        flightMode('Stabilized1');
+        step = steps.TEST_ACTUATORS;
+        break;
+      case steps.TEST_ACTUATORS:
+        gcsReceiverChannel(0, -0.9);
+        break;
+      }
       return true;
     },
     end: function() {
@@ -436,6 +464,101 @@ function undirtyWatcherAndSend() {
     client.connection.sendUpdateWithId(container.objectId, container.currentValue.value);
     container.done();
   });
+}
+
+/**
+ *  Taulab uavtalk helpers
+ */
+
+function setupInitialSettings() {
+
+}
+
+function gcsControl() {
+  uavwatcher.addOrUpdateUAV('ManualControlSettings', {
+    Arming: 'Switch',
+    ArmedTimeout:0,
+    ArmTimeoutAutonomous:'DISABLED',
+    FlightModeNumber:1,
+    ChannelNeutral: {
+      Accessory0:1500,
+      Accessory1:1500,
+      Accessory2:1500,
+      Arming:1500,
+      Collective:1500,
+      FlightMode:1500,
+      Pitch:1500,
+      Roll:1500,
+      Throttle:1500,
+      Yaw:1500
+    },
+    ChannelNumber: {
+      Accessory0:0,
+      Accessory1:0,
+      Accessory2:0,
+      Arming:5,
+      Collective:0,
+      FlightMode:0,
+      Pitch:3,
+      Roll:2,
+      Throttle:1,
+      Yaw:4
+    },
+    ChannelMin: {
+      Accessory0:1000,
+      Accessory1:1000,
+      Accessory2:1000,
+      Arming:1000,
+      Collective:1000,
+      FlightMode:1000,
+      Pitch:1000,
+      Roll:1000,
+      Throttle:1000,
+      Yaw:1000
+    },
+    ChannelMax: {
+      Accessory0:2000,
+      Accessory1:2000,
+      Accessory2:2000,
+      Arming:2000,
+      Collective:2000,
+      FlightMode:2000,
+      Pitch:2000,
+      Roll:2000,
+      Throttle:2000,
+      Yaw:2000
+    },
+    ChannelGroups: {
+      Accessory0:'None',
+      Accessory1:'None',
+      Accessory2:'None',
+      Arming:'GCS',
+      Collective:'None',
+      FlightMode:'None',
+      Pitch:'GCS',
+      Roll:'GCS',
+      Throttle:'GCS',
+      Yaw:'GCS' 
+    }
+  });
+
+  uavwatcher.addOrUpdateUAV('GCSReceiver', {
+    Channel: [-1, 0, 0, 0, 0, 0, 0, 0]
+  });
+}
+
+function gcsReceiverChannel(channel, value) {
+  var gcsReceiver = _.cloneDeep(uavwatcher.valueForUAV('GCSReceiver'));
+  gcsReceiver.Channel[channel] = value;
+  uavwatcher.addOrUpdateUAV('GCSReceiver', gcsReceiver);
+}
+
+function flightMode(flightMode) {
+
+}
+
+function loiterCommand(loiterCommand) {
+
 }
 
 /**
