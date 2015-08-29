@@ -51,6 +51,7 @@ class UAVContainer {
     this.objectId = objectId;
     this.previousValues = [];
     this.currentValue = {value: _.cloneDeep(value), timeFrom: new Date().getTime(), timeTo: null};
+    this.initialValue = _.cloneDeep(this.currentValue);
     this.dirty = true;
   }
 
