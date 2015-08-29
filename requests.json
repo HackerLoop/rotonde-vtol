@@ -6,6 +6,7 @@
       "objectId": 42424242,
       "data":
         {
+          "controlType": "LOITER",
           "takeoff":true,
           "forward":0,
           "left":0,
