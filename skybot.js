@@ -1,6 +1,6 @@
 'use strict';
 
-var MOCK_STATES = false;
+var MOCK_STATES = true;
 
 var MODULE_NAME = 'SkybotControl';
 var MAX_UPDATELESS_TIME = 1000;
