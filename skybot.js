@@ -553,8 +553,16 @@ function gcsReceiverChannel(channel, value) {
   uavwatcher.addOrUpdateUAV('GCSReceiver', gcsReceiver);
 }
 
+/**
+ * 'AltitudeHold'
+ * 'Stabilized1',
+ * 'ReturnToHome'
+ * 'PositionHold'
+ */
 function flightMode(flightMode) {
-
+  uavwatcher.addOrUpdateUAV({
+    FlightMode: flightMode,
+  });
 }
 
 function loiterCommand(loiterCommand) {
