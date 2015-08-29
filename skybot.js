@@ -100,17 +100,22 @@ client.onReady(function() {
   client.connection.sendDefinition(SkybotDefinition);
   client.updateHandlers.attach(MODULE_NAME, onUpdate);
   client.requestHandlers.attach(MODULE_NAME, onRequest);
+
+  uavwatcher = new UAVWatcher(client.definitionsStore);
+  uavwatcher.addOrUpdateUAV(SKYBOT_ID, initialSkybotValue);
+
   client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings']).then(
     function(values) {
-
+      // load initial values for the requested uavs
+      _.forEach(values, function(value) {
+        uavwatcher.addOrUpdateUAV(value.objectId, value.data);
+      });
     },
     function(errors) {
       console.log(errors);
     }
   );
 
-  uavwatcher = new UAVWatcher(client.definitionsStore);
-  uavwatcher.addOrUpdateUAV(SKYBOT_ID, initialSkybotValue);
 });
 
 process.on('exit', function(code) {
