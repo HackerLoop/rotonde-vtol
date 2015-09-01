@@ -29,6 +29,7 @@ var states = {
   LOITERING: 'LOITERING',
   WAITING: 'WAITING',
   GOINGTO: 'GOINGTO',
+  ERROR: 'ERROR',
 };
 
 var controlTypes = {
@@ -98,7 +99,7 @@ var uavwatcher;
 /**
  *  Connection configuration and initialization
  */
-var client = Client('ws://127.0.0.1:4224/uav', {debug: false});
+var client = Client('ws://127.0.0.1:4224/uav', {debug: true});
 
 client.onReady(function() {
   client.connection.sendDefinition(SkybotDefinition);
@@ -108,7 +109,7 @@ client.onReady(function() {
   uavwatcher = new UAVWatcher(client.definitionsStore);
   uavwatcher.addOrUpdateUAV(SKYBOT_ID, initialSkybotValue);
 
-  client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings', 'FlightStatus']).then(
+  client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings', 'FlightStatus', 'SystemAlarms', 'GPSPosition']).then(
     function(values) {
       // load initial values for the requested uavs
       _.forEach(values, function(value) {
@@ -117,8 +118,10 @@ client.onReady(function() {
 
       initStates();
 
-      console.log('Started');
+      client.updateHandlers.attach('SystemAlarms', onUpdate);
+      client.updateHandlers.attach('GPSPosition', onUpdate);
 
+      console.log('Started');
     },
     function(errors) {
       console.log(errors);
@@ -301,6 +304,27 @@ MockStates.Waiting = (function() {
   };
 })();
 
+MockStates.Error = (function() {
+  return {
+    priority: 20,
+    canTrigger: function() {
+      var error = false;
+      var systemalarms = uavwatcher.valueForUAV('SystemAlarms');
+      _.forEach(_.keys(systemalarms.Alarm), function(key) {
+        var status = systemalarms.Alarm[key];
+        if (status == 'Error' || status == 'Critical') {
+          console.log(key + ' : ' + status);
+          error = true;
+        }
+      });
+      return error;
+    },
+    start: function() {
+      uavwatcher.addOrUpdateUAV(SKYBOT_ID, {state: states.ERROR, status: statuses.ERROR, forward: 0, left: 0, up: 0}, true);
+    },
+  };
+})()
+
 /**
  *  real states
  */
@@ -450,6 +474,7 @@ function initStates() {
   machine.addState(s.Loitering);
   machine.addState(s.Waiting);
   machine.addState(s.GoingTo);
+  machine.addState(s.Error);
 
   setInterval(work, 50);
 }
@@ -474,6 +499,12 @@ function setupInitialSettings() {
 
 }
 
+var GCSReceiverChannelValues = {
+  MIN: 1000,
+  MED: 1500,
+  MAX: 2000
+};
+
 function gcsControl() {
   uavwatcher.addOrUpdateUAV('ManualControlSettings', {
     Arming: 'Switch',
@@ -481,16 +512,16 @@ function gcsControl() {
     ArmTimeoutAutonomous:'DISABLED',
     FlightModeNumber:1,
     ChannelNeutral: {
-      Accessory0:1500,
-      Accessory1:1500,
-      Accessory2:1500,
-      Arming:1500,
-      Collective:1500,
-      FlightMode:1500,
-      Pitch:1500,
-      Roll:1500,
-      Throttle:1500,
-      Yaw:1500
+      Accessory0:GCSReceiverChannelValues.MED,
+      Accessory1:GCSReceiverChannelValues.MED,
+      Accessory2:GCSReceiverChannelValues.MED,
+      Arming:GCSReceiverChannelValues.MED,
+      Collective:GCSReceiverChannelValues.MED,
+      FlightMode:GCSReceiverChannelValues.MED,
+      Pitch:GCSReceiverChannelValues.MED,
+      Roll:GCSReceiverChannelValues.MED,
+      Throttle:GCSReceiverChannelValues.MED,
+      Yaw:GCSReceiverChannelValues.MED
     },
     ChannelNumber: {
       Accessory0:0,
@@ -505,28 +536,28 @@ function gcsControl() {
       Yaw:4
     },
     ChannelMin: {
-      Accessory0:1000,
-      Accessory1:1000,
-      Accessory2:1000,
-      Arming:1000,
-      Collective:1000,
-      FlightMode:1000,
-      Pitch:1000,
-      Roll:1000,
-      Throttle:1000,
-      Yaw:1000
+      Accessory0:GCSReceiverChannelValues.MIN,
+      Accessory1:GCSReceiverChannelValues.MIN,
+      Accessory2:GCSReceiverChannelValues.MIN,
+      Arming:GCSReceiverChannelValues.MIN,
+      Collective:GCSReceiverChannelValues.MIN,
+      FlightMode:GCSReceiverChannelValues.MIN,
+      Pitch:GCSReceiverChannelValues.MIN,
+      Roll:GCSReceiverChannelValues.MIN,
+      Throttle:GCSReceiverChannelValues.MIN,
+      Yaw:GCSReceiverChannelValues.MIN
     },
     ChannelMax: {
-      Accessory0:2000,
-      Accessory1:2000,
-      Accessory2:2000,
-      Arming:2000,
-      Collective:2000,
-      FlightMode:2000,
-      Pitch:2000,
-      Roll:2000,
-      Throttle:2000,
-      Yaw:2000
+      Accessory0:GCSReceiverChannelValues.MAX,
+      Accessory1:GCSReceiverChannelValues.MAX,
+      Accessory2:GCSReceiverChannelValues.MAX,
+      Arming:GCSReceiverChannelValues.MAX,
+      Collective:GCSReceiverChannelValues.MAX,
+      FlightMode:GCSReceiverChannelValues.MAX,
+      Pitch:GCSReceiverChannelValues.MAX,
+      Roll:GCSReceiverChannelValues.MAX,
+      Throttle:GCSReceiverChannelValues.MAX,
+      Yaw:GCSReceiverChannelValues.MAX
     },
     ChannelGroups: {
       Accessory0:'None',
@@ -543,13 +574,23 @@ function gcsControl() {
   });
 
   uavwatcher.addOrUpdateUAV('GCSReceiver', {
-    Channel: [-1, 0, 0, 0, 0, 0, 0, 0]
+    Channel: [GCSReceiverChannelValues.MIN, GCSReceiverChannelValues.MED, GCSReceiverChannelValues.MED, GCSReceiverChannelValues.MED, GCSReceiverChannelValues.MED, GCSReceiverChannelValues.MED, GCSReceiverChannelValues.MED, GCSReceiverChannelValues.MED]
   });
 }
 
+// value is between -1 and 1, the function then interpolates
+// to set the right value based on channel min/med/max
 function gcsReceiverChannel(channel, value) {
   var gcsReceiver = _.cloneDeep(uavwatcher.valueForUAV('GCSReceiver'));
-  gcsReceiver.Channel[channel] = value;
+  var convert = 0;
+
+  if (value < 0) {
+    convert = GCSReceiverChannelValues.MED + (GCSReceiverChannelValues.MIN - GCSReceiverChannelValues.MED) * value;
+  } else if (value > 0) {
+    convert = GCSReceiverChannelValues.MED + (GCSReceiverChannelValues.MAX - GCSReceiverChannelValues.MED) * value;
+  }
+
+  gcsReceiver.Channel[channel] = convert;
   uavwatcher.addOrUpdateUAV('GCSReceiver', gcsReceiver);
 }
 
@@ -579,6 +620,7 @@ setInterval(function() {
   if (lastUpdate === -1) {
     return;
   }
+  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
   var time = new Date().getTime();
   if (time - lastUpdate > MAX_UPDATELESS_TIME) {
     console.log('Watchdog fired !');
@@ -593,16 +635,22 @@ setInterval(function() {
  */
 
 function onUpdate(uavo) {
-  lastUpdate = new Date().getTime();
 
   var doWork = false;
-  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-  if (skybotValue.status === statuses.IDLE) {
-    console.log('exit IDLE state');
-    skybotValue = uavwatcher.addOrUpdateUAV(SKYBOT_ID, {status: statuses.CONNECTED});
-    skybotValue.done();
-    client.connection.sendUpdateWithId(SKYBOT_ID, skybotValue.currentValue.value);
-    doWork = true;
+  if (uavo.objectId === SKYBOT_ID) {
+    var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
+    if (skybotValue.status === statuses.ERROR)
+      return;
+
+    lastUpdate = new Date().getTime();
+
+    if (skybotValue.status === statuses.IDLE) {
+      console.log('exit IDLE state');
+      skybotValue = uavwatcher.addOrUpdateUAV(SKYBOT_ID, {status: statuses.CONNECTED});
+      skybotValue.done();
+      client.connection.sendUpdateWithId(SKYBOT_ID, skybotValue.currentValue.value);
+      doWork = true;
+    }
   }
 
   var container = uavwatcher.addOrUpdateUAV(uavo.objectId, uavo.data);
@@ -620,6 +668,6 @@ function onUpdate(uavo) {
 function onRequest(req) {
   console.log('onRequest');
   var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-  client.connection.sendUpdateWithId(SKYBOT_ID, skybotValue.currentValue.value);
+  client.connection.sendUpdateWithId(SKYBOT_ID, skybotValue);
 }
 
