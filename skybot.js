@@ -42,7 +42,7 @@ var controlTypes = {
  * control functions
  */
 
-module.exports.start = function()() {
+module.exports.start = function() {
   running = true;
   sendSkybotControl();
 }
