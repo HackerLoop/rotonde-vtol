@@ -1,28 +1,20 @@
 'use strict';
 
-var MOCK_STATES = true;
+var _ = require('lodash');
+
+var UAVWatcher = require('./uavwatcher');
+var Client = require('skybot-client');
+
+var uavwatcher;
+
+/**
+ *  SkybotControl constants
+ */
 
 var UAV_NAME = 'SkybotControl';
 var SKYBOT_ID = 42424242;
-
 var UAV_STATUS_NAME = 'SkybotControlStatus';
 var SKYBOT_STATUS_ID = 24242424;
-
-var MAX_UPDATELESS_TIME = 1000;
-
-var UAVWatcher = require('./uavwatcher');
-var StateMachine = require('./state_machine');
-var Client = require('skybot-client');
-
-var _ = require('lodash');
-
-/**
- * TODO refactor with behavioural tree algorithm
- */
-
-/**
- *  Skybot module definition and default value
- */
 
 var statuses = {
   IDLE: 'IDLE',
@@ -46,677 +38,237 @@ var controlTypes = {
   IDLE: 'IDLE',
 };
 
-var SkybotStatusDefinition = {
-  name: UAV_STATUS_NAME,
-  id: SKYBOT_STATUS_ID,
-  description: 'Provides base uavobject for high-level modules and skybot-control',
-  fields: [
-    {
-      name: 'status',
-      units: 'enum',
-      options: _.keys(statuses),
-      elements: 1,
-    },
-    {
-      name: 'state',
-      units: 'enum',
-      options: _.keys(states),
-      elements: 1,
-    },
-  ]
-};
+/**
+ * control functions
+ */
 
-var SkybotDefinition = {
-  name: UAV_NAME,
-  id: SKYBOT_ID,
-  description: 'Provides base uavobject for high-level modules and skybot-control',
-  fields: [
-    {
-      name: 'takeoff',
-      units: 'boolean',
-      elements: 1,
-    },
-    {
-      name: 'controlType',
-      units: 'enum',
-      options: _.keys(controlTypes),
-      elements: 1,
-    },
-    {
-      name: 'forward',
-      units: 'm/s',
-      elements: 1,
-    },
-    {
-      name: 'takeoff',
-      units: 'm/s',
-      elements: 1,
-    },
-    {
-      name: 'up',
-      units: 'm/s',
-      elements: 1,
-    },
-    {
-      name: 'latitude',
-      units: 'deg',
-      elements: 1,
-    },
-    {
-      name: 'longitude',
-      units: 'deg',
-      elements: 1,
-    },
-  ]
-};
+module.exports.start = function()() {
+  running = true;
+  sendSkybotControl();
+}
 
-var initialSkybotStatusValue = {
-  status: statuses.IDLE,
-  state: states.IDLE,
-};
+module.exports.stop = function() {
+  running = false;
+}
 
-var initialSkybotValue = {
-  takeoff: false,
-  controlType: controlTypes.IDLE,
-  forward: 0,
-  left: 0,
-  up: 0,
-  latitude: 0,
-  longitude: 0,
-};
+module.exports.reset = function() {
+  uavwatcher.resetUAV(SKYBOT_ID);
+}
 
-var uavwatcher;
+module.exports.waitIdle = function() {
+  return new Promise(function(resolve, reject) {
+    var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
+    if (skybotStatusValue.state == statuses.IDLE) {
+      resolve();
+      return;
+    }
+    nextPromise = {
+      wantsState: states.IDLE,
+      resolve: resolve,
+      reject: reject,
+    }
+  });
+}
+
+module.exports.takeOff = function() {
+  console.log('takeOff');
+
+  var uav = {
+    'takeoff': true,
+  };
+  uavwatcher.push(SKYBOT_ID, uav);
+  return new Promise(function(resolve, reject) {
+    nextPromise = {
+      wantsState: states.WAITING,
+      afterState: states.TAKINGOFF,
+      resolve: resolve,
+      reject: reject,
+    }
+  });
+}
+
+module.exports.land = function() {
+  console.log('land');
+
+  var uav = {
+    takeoff: false,
+  };
+  uavwatcher.push(SKYBOT_ID, uav);
+  return new Promise(function(resolve, reject) {
+    nextPromise = {
+      wantsState: states.IDLE,
+      afterState: states.LANDING,
+      resolve: resolve,
+      reject: reject,
+    }
+  });
+}
+
+module.exports.loiter = function(forward, left, up, duration) {
+  console.log('loiter ', forward, left, up);
+
+  var uav = {
+    controlType: controlTypes.LOITER,
+    forward: forward,
+    left: left,
+    up: up,
+    latitude: 0,
+    longitude: 0,
+  };
+  uavwatcher.push(SKYBOT_ID, uav);
+
+  setTimeout(function() {
+    var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
+    if (skybotStatusValue.state !== states.LOITERING)
+      return;
+    var uav = {
+      controlType: controlTypes.IDLE,
+      forward: 0,
+      left: 0,
+      up: 0,
+      latitude: 0,
+      longitude: 0,
+      toto: 'caca',
+    };
+    uavwatcher.push(SKYBOT_ID, uav);
+    flushUAVWatcher();
+  }, duration);
+
+  return new Promise(function(resolve, reject) {
+    nextPromise = {
+      wantsState: states.WAITING,
+      afterState: states.LOITERING,
+      resolve: resolve,
+      reject: reject,
+    }
+  });
+}
+
+module.exports.go = function(latitude, longitude) {
+  console.log('go ', latitude, longitude);
+
+  var uav = {
+    controlType: controlTypes.GOTO,
+    latitude: latitude,
+    longitude: longitude,
+    forward: 0,
+    left: 0,
+    up: 0,
+  };
+  uavwatcher.push(SKYBOT_ID, uav);
+  return new Promise(function(resolve, reject) {
+    nextPromise = {
+      wantsState: states.WAITING,
+      afterState: states.GOINGTO,
+      resolve: resolve,
+      reject: reject,
+    }
+  });
+}
+
+/**
+ *  Utils
+ */
+
+function waiting() {
+  var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
+  return skybotStatusValue.state == states.WAITING;
+}
+
+function idle() {
+  var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
+  return skybotStatusValue.status == states.IDLE && skybotStatusValue.state == states.IDLE;
+}
 
 /**
  *  Connection configuration and initialization
  */
-var client = Client('ws://127.0.0.1:4224/uav');
 
-client.onReady(function() {
-  client.connection.sendDefinition(SkybotDefinition);
-  client.connection.sendDefinition(SkybotStatusDefinition);
+// TODO there is a problem with having the client initialization in the module's abstraction,
+// this approach prevents having multiple module's abstaction to run in the same user module.
+// We chose to leave this for later, as a more global solution might arise.
+var client = Client('ws://127.0.0.1:4224/uav', {debug: false});
 
-  uavwatcher = new UAVWatcher(client.definitionsStore);
-  uavwatcher.push(SKYBOT_ID, initialSkybotValue);
-  uavwatcher.push(SKYBOT_STATUS_ID, initialSkybotStatusValue);
+module.exports.onReady = function(onReady, onError) {
+  client.onReady(function() {
+    uavwatcher = new UAVWatcher(client.definitionsStore);
 
-  client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings', 'FlightStatus', 'SystemAlarms', 'GPSPosition']).then(
-    function(values) {
-      // load initial values for the requested uavs
-      _.forEach(values, function(value) {
-        uavwatcher.push(value.objectId, value.data).done();
-      });
+    client.requestValuesForUavs([UAV_NAME, UAV_STATUS_NAME]).then(
+      function(values) {
+        // load initial values
+        uavwatcher.push(SKYBOT_ID, {controlType: controlTypes.IDLE, forward: 0, left: 0, up: 0, latitude: 0, longitude: 0}).done();
+        uavwatcher.push(values[1].objectId, values[1].data).done();
 
-      client.updateHandlers.attach(UAV_NAME, onUpdate);
-      client.requestHandlers.attach(UAV_NAME, onRequest);
-      client.requestHandlers.attach(UAV_STATUS_NAME, onRequest);
-      initStates();
+        client.updateHandlers.attach(UAV_NAME, onUpdate);
+        client.updateHandlers.attach(UAV_STATUS_NAME, onUpdate);
 
-      client.updateHandlers.attach('SystemAlarms', onUpdate);
-      client.updateHandlers.attach('GPSPosition', onUpdate);
-
-      console.log('Started');
-    },
-    function(errors) {
-      console.log(errors);
-    }
-  );
-
-});
-
-process.on('exit', function(code) {
-  console.log('About to exit');
-});
-
-client.connect();
-
-/**
- *  State machine management
- */
-
-var machine;
-
-/**
- * Chaining conditions
- */
-
-function shouldTakeOff() {
-  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-  var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
-  return skybotStatusValue.status === statuses.CONNECTED &&
-    skybotValue.takeoff === true &&
-    skybotStatusValue.state === states.IDLE;
-}
-
-function shouldLand() {
-  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-  var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
-  return (
-    (skybotStatusValue.status === statuses.CONNECTED && skybotValue.takeoff === false) ||
-      skybotStatusValue.status === statuses.IDLE) &&
-    skybotStatusValue.state !== states.IDLE &&
-    skybotStatusValue.state !== states.LANDING;
-}
-
-function shouldLoiter() {
-  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-  var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
-  return skybotValue.controlType === controlTypes.LOITER &&
-    skybotStatusValue.status === statuses.CONNECTED &&
-    skybotValue.takeoff === true &&
-    (skybotValue.forward !== 0 || skybotValue.left !== 0 || skybotValue.up !== 0);
-}
-
-function shouldGoto() {
-  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-  var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
-  return skybotValue.controlType === controlTypes.GOTO &&
-    skybotStatusValue.status === statuses.CONNECTED &&
-    skybotValue.takeoff === true;
-}
-
-function shouldWait() {
-  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-  var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
-  return skybotStatusValue.status === statuses.CONNECTED &&
-    skybotValue.takeoff === true;
-}
-
-/**
- *  States definition
- */
-
-var MockStates = {};
-
-MockStates.Idle = (function() {
-  return {
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.IDLE});
-      console.log('Started state ' + states.IDLE);
-    }
-  };
-})();
-
-MockStates.TakingOff = (function() {
-  var working = false;
-  return {
-    priority: 10,
-    canTrigger: function() {
-      return shouldTakeOff();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.TAKINGOFF});
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 3000);
-      console.log('Started state ' + states.TAKINGOFF);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-})();
-
-MockStates.Landing = (function() {
-  var working = false;
-  return {
-    priority: 10,
-    canTrigger: function() {
-      return shouldLand();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.LANDING});
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 3000);
-      console.log('Started state ' + states.LANDING);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-
-})();
-
-MockStates.Loitering = (function() {
-  var working = false;
-  return {
-    priority: 5,
-    canTrigger: function() {
-      return shouldLoiter();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.LOITERING});
-      working = true;
-      console.log('Started state ' + states.LOITERING);
-    },
-    update: function() {
-      return shouldLoiter();
-    },
-    end: function() {
-    }
-  };
-
-})();
-
-MockStates.GoingTo = (function() {
-  var working = false;
-  var currentPosition = {latitude: 0, longitude: 0};
-  return {
-    priority: 5,
-    canTrigger: function() {
-      var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-      return shouldGoto() &&
-             (skybotValue.latitude != currentPosition.latitude ||
-             skybotValue.longitude != currentPosition.longitude);
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.GOINGTO});
-      working = true;
-      setTimeout(function() {
-        var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
-        currentPosition = {latitude: skybotValue.latitude, longitude: skybotValue.longitude};
-        working = false;
-      }, 10000);
-      console.log('Started state ' + states.GOINGTO);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-})();
-
-MockStates.Waiting = (function() {
-  return {
-    priority: 1,
-    canTrigger: function() {
-      return shouldWait();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.WAITING});
-      console.log('Started state ' + states.WAITING);
-    },
-  };
-})();
-
-MockStates.Error = (function() {
-  return {
-    priority: 20,
-    canTrigger: function() {
-      var error = false;
-      var systemalarms = uavwatcher.valueForUAV('SystemAlarms');
-      _.forEach(_.keys(systemalarms.Alarm), function(key) {
-        var status = systemalarms.Alarm[key];
-        if (status == 'Error' || status == 'Critical') {
-          console.log(key + ' : ' + status);
-          error = true;
-        }
-      });
-      return error;
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.ERROR, status: statuses.ERROR});
-      console.log('Started state ' + states.ERROR);
-    },
-  };
-})()
-
-/**
- *  real states
- */
-
-var States = {};
-
-States.Idle = (function() {
-  return {
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.IDLE});
-      console.log('Started state ' + states.IDLE);
-    }
-  };
-})();
-
-States.TakingOff = (function() {
-  var steps = {
-    SETUP_GCS: 'SETUP_GCS',
-    ZERO_THROTTLE: 'ZERO_THROTTLE',
-    STABILIZED_MOD: 'STABILIZED_MOD',
-    TEST_ACTUATORS: 'TEST_ACTUATORS',
-  };
-  var step = steps.SETUP_GCS;
-
-  return {
-    priority: 10,
-    canTrigger: function() {
-      return shouldTakeOff();
-    },
-    start: function() {
-      step = steps.SETUP_GCS;
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.TAKINGOFF});
-      console.log('Started state ' + states.TAKINGOFF);
-    },
-    update: function() {
-      switch(step) {
-      case steps.SETUP_GCS:
-        gcsControl();
-        step = steps.ZERO_THROTTLE;
-        break;
-      case steps.ZERO_THROTTLE:
-        gcsReceiverChannel(0, -1);
-        step = steps.STABILIZED_MOD;
-        break;
-      case steps.STABILIZED_MOD:
-        flightMode('Stabilized1');
-        step = steps.TEST_ACTUATORS;
-        break;
-      case steps.TEST_ACTUATORS:
-        gcsReceiverChannel(0, -0.9);
-        break;
+        flushUAVWatcher();
+        console.log('Started');
+        onReady();
+      },
+      function(errors) {
+        console.log(errors);
+        onError(errors);
       }
-      return true;
-    },
-    end: function() {
-    }
-  };
-})();
+    );
 
-States.Landing = (function() {
-  var working = false;
-  return {
-    priority: 10,
-    canTrigger: function() {
-      return shouldLand();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.LANDING});
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 3000);
-      console.log('Started state ' + states.LANDING);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-
-})();
-
-States.Loitering = (function() {
-  var working = false;
-  return {
-    priority: 5,
-    canTrigger: function() {
-      return shouldLoiter();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.LOITERING});
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 1000);
-      console.log('Started state ' + states.LOITERING);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-
-})();
-
-States.GoingTo = (function() {
-  var working = false;
-  return {
-    priority: 5,
-    canTrigger: function() {
-      return shouldGoto();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.GOINGTO});
-      working = true;
-      setTimeout(function() {
-        working = false;
-      }, 10000);
-      console.log('Started state ' + states.GOINGTO);
-    },
-    update: function() {
-      return working;
-    },
-    end: function() {
-    }
-  };
-})();
-
-States.Waiting = (function() {
-  return {
-    priority: 1,
-    canTrigger: function() {
-      return shouldWait();
-    },
-    start: function() {
-      uavwatcher.push(SKYBOT_STATUS_ID, {state: states.WAITING});
-      console.log('Started state ' + states.WAITING);
-    },
-  };
-})();
-
-function initStates() {
-  var s = (MOCK_STATES ? MockStates : States);
-
-  machine = StateMachine.newMachine();
-  machine.addState(s.Idle);
-  machine.addState(s.TakingOff);
-  machine.addState(s.Landing);
-  machine.addState(s.Loitering);
-  machine.addState(s.Waiting);
-  machine.addState(s.GoingTo);
-  //machine.addState(s.Error);
-
-  setInterval(work, 50);
-}
-
-function work() {
-  machine.update();
-  undirtyWatcherAndSend();
+    client.connect();
+  }
 };
 
-function undirtyWatcherAndSend() {
+/**
+ *  change listeners
+ */
+
+var nextPromise;/* = {
+  wantsState: '',
+  afterState: '',
+  resolve: function(){},
+  reject: function(){},
+}*/
+
+function onUpdate(uavo) {
+  var container = uavwatcher.push(uavo.objectId, uavo.data);
+  if (container.dirty) {
+    container.done();
+    // if this is the SkybotControlStatus uavObject, and we have a current promise, treat it.
+    if (nextPromise && container.objectId == SKYBOT_STATUS_ID) {
+      var tmp = nextPromise;
+      if (tmp.wantsState == container.currentValue.value.state) { // we reached the desired state:)
+        nextPromise = null;
+        tmp.resolve();
+      } else if (!_.isUndefined(tmp.afterState) && tmp.afterState !== container.currentValue.value.state && tmp.started) { // something is abnormal, we should have either wantsState or afterState as a state
+        nextPromise = null;
+        tmp.reject();
+        console.log('reject ' + JSON.stringify(tmp) + ' ' + JSON.stringify(uavo.data));
+      } else if (!_.isUndefined(tmp.afterState) && tmp.afterState == container.currentValue.value.state) {
+        if (!tmp.started) {
+          console.log('Started: ' + tmp.afterState);
+        }
+        tmp.started = true;
+      } // TODO we need a timeout for nextPromises that don't have an afterState field, and when afterState is never reached
+      flushUAVWatcher();
+    }
+  }
+}
+
+function flushUAVWatcher() {
   uavwatcher.forEachDirty(function(container) {
     client.connection.sendUpdateWithId(container.objectId, container.currentValue.value);
     container.done();
   });
 }
 
-/**
- *  Taulab uavtalk helpers
+/*
+ * Send SkybotControl uav value periodically, every 500ms to prevent watchdog triggering on SkybotControl module side.
  */
 
-var GCSReceiverChannelValues = {
-  MIN: 1000,
-  MED: 1500,
-  MAX: 2000
-};
+var running = true;
+function sendSkybotControl() {
+  var skybotValue = uavwatcher.valueForUAV(SKYBOT_ID);
 
-function gcsControl() {
-  uavwatcher.push('ManualControlSettings', {
-    Arming: 'Switch',
-    ArmedTimeout:0,
-    ArmTimeoutAutonomous:'DISABLED',
-    FlightModeNumber:1,
-    ChannelNeutral: {
-      Accessory0:GCSReceiverChannelValues.MED,
-      Accessory1:GCSReceiverChannelValues.MED,
-      Accessory2:GCSReceiverChannelValues.MED,
-      Arming:GCSReceiverChannelValues.MED,
-      Collective:GCSReceiverChannelValues.MED,
-      FlightMode:GCSReceiverChannelValues.MED,
-      Pitch:GCSReceiverChannelValues.MED,
-      Roll:GCSReceiverChannelValues.MED,
-      Throttle:GCSReceiverChannelValues.MED,
-      Yaw:GCSReceiverChannelValues.MED
-    },
-    ChannelNumber: {
-      Accessory0:0,
-      Accessory1:0,
-      Accessory2:0,
-      Arming:5,
-      Collective:0,
-      FlightMode:0,
-      Pitch:3,
-      Roll:2,
-      Throttle:1,
-      Yaw:4
-    },
-    ChannelMin: {
-      Accessory0:GCSReceiverChannelValues.MIN,
-      Accessory1:GCSReceiverChannelValues.MIN,
-      Accessory2:GCSReceiverChannelValues.MIN,
-      Arming:GCSReceiverChannelValues.MIN,
-      Collective:GCSReceiverChannelValues.MIN,
-      FlightMode:GCSReceiverChannelValues.MIN,
-      Pitch:GCSReceiverChannelValues.MIN,
-      Roll:GCSReceiverChannelValues.MIN,
-      Throttle:GCSReceiverChannelValues.MIN,
-      Yaw:GCSReceiverChannelValues.MIN
-    },
-    ChannelMax: {
-      Accessory0:GCSReceiverChannelValues.MAX,
-      Accessory1:GCSReceiverChannelValues.MAX,
-      Accessory2:GCSReceiverChannelValues.MAX,
-      Arming:GCSReceiverChannelValues.MAX,
-      Collective:GCSReceiverChannelValues.MAX,
-      FlightMode:GCSReceiverChannelValues.MAX,
-      Pitch:GCSReceiverChannelValues.MAX,
-      Roll:GCSReceiverChannelValues.MAX,
-      Throttle:GCSReceiverChannelValues.MAX,
-      Yaw:GCSReceiverChannelValues.MAX
-    },
-    ChannelGroups: {
-      Accessory0:'None',
-      Accessory1:'None',
-      Accessory2:'None',
-      Arming:'GCS',
-      Collective:'None',
-      FlightMode:'None',
-      Pitch:'GCS',
-      Roll:'GCS',
-      Throttle:'GCS',
-      Yaw:'GCS' 
-    }
-  });
-
-  uavwatcher.push('GCSReceiver', {
-    Channel: [GCSReceiverChannelValues.MIN,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED]
-  });
-}
-
-// value is between -1 and 1, the function then interpolates
-// to set the right value based on channel min/med/max
-function gcsReceiverChannel(channel, value) {
-  var gcsReceiver = _.cloneDeep(uavwatcher.valueForUAV('GCSReceiver'));
-  var convert = 0;
-
-  if (value < 0) {
-    convert = GCSReceiverChannelValues.MED + (GCSReceiverChannelValues.MIN - GCSReceiverChannelValues.MED) * value;
-  } else if (value > 0) {
-    convert = GCSReceiverChannelValues.MED + (GCSReceiverChannelValues.MAX - GCSReceiverChannelValues.MED) * value;
-  }
-
-  gcsReceiver.Channel[channel] = convert;
-  uavwatcher.push('GCSReceiver', gcsReceiver);
-}
-
-/**
- * 'AltitudeHold'
- * 'Stabilized1',
- * 'ReturnToHome'
- * 'PositionHold'
- */
-function flightMode(flightMode) {
-  uavwatcher.push({
-    FlightMode: flightMode,
-  });
-}
-
-function loiterCommand(loiterCommand) {
-
-}
-
-/**
- *  Watchdog
- */
-
-var lastUpdate = -1; // watchdog, tracks last update received as a UNIX timestamp,
-                     // triggers IDLE status when exceeds MAX_UPDATELESS_TIME seconds
-setInterval(function() {
-  if (lastUpdate === -1) {
+  client.connection.sendUpdateWithId(SKYBOT_ID, skybotValue);
+  if (!running)
     return;
-  }
-  var time = new Date().getTime();
-  if (time - lastUpdate > MAX_UPDATELESS_TIME) {
-    console.log('Watchdog fired !');
-    uavwatcher.push(SKYBOT_STATUS_ID, {status: statuses.IDLE});
-    work();
-    lastUpdate = -1;
-  }
-}, 500);
-
-/**
- *  change listeners
- */
-
-function onUpdate(uavo) {
-  var doWork = false;
-  if (uavo.objectId === SKYBOT_ID) {
-    var skybotStatusValue = uavwatcher.valueForUAV(SKYBOT_STATUS_ID);
-    if (skybotStatusValue.status === statuses.ERROR)
-      return;
-
-    lastUpdate = new Date().getTime();
-
-    if (skybotStatusValue.status === statuses.IDLE) {
-      console.log('exit IDLE state');
-      skybotStatusValue = uavwatcher.push(SKYBOT_STATUS_ID, {status: statuses.CONNECTED});
-      doWork = true;
-    }
-  }
-
-  var container = uavwatcher.push(uavo.objectId, uavo.data);
-  if (container.dirty) {
-    container.done();
-    doWork = true;
-  }
-
-  if (doWork) {
-    work(); // trigger a state machine round trip
-  }
+  setTimeout(sendSkybotControl, 500);
 }
-
-// respond to requests
-function onRequest(req) {
-  console.log('onRequest');
-  if (req.objectId === SKYBOT_ID || req.objectId == SKYBOT_STATUS_ID) {
-    var value = uavwatcher.valueForUAV(req.objectId);
-    client.connection.sendUpdateWithId(req.objectId, value);
-  }
-}
-
