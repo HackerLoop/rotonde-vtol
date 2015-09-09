@@ -172,23 +172,23 @@ module.exports.go = function(latitude, longitude) {
 
 module.exports.helper = {};
 module.exports.helper.loiter = function(forward, left, up, duration) {
-  return function() {return skybot.loiter(forward, left, up, duration)};
+  return function() {return module.exports.loiter(forward, left, up, duration)};
 }
 
 module.exports.helper.go = function(latitude, longitude) {
-  return function() {return skybot.go(latitude, longitude)};
+  return function() {return module.exports.go(latitude, longitude)};
 }
 
 module.exports.helper.start = function() {
-  skybot.start();
-  return skybot.takeOff();
+  module.exports.start();
+  return module.exports.takeOff();
 }
 
 module.exports.helper.stop = function(reason) {
   return function() {
     console.log('stopped ' + reason);
-    skybot.reset();
-    skybot.stop();
+    module.exports.reset();
+    module.exports.stop();
   };
 }
 
