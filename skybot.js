@@ -167,6 +167,32 @@ module.exports.go = function(latitude, longitude) {
 }
 
 /**
+ *  Helpers
+ */
+
+module.exports.helper = {};
+module.exports.helper.loiter = function(forward, left, up, duration) {
+  return function() {return skybot.loiter(forward, left, up, duration)};
+}
+
+module.exports.helper.go = function(latitude, longitude) {
+  return function() {return skybot.go(latitude, longitude)};
+}
+
+module.exports.helper.start() {
+  skybot.start();
+  return skybot.takeOff();
+}
+
+module.exports.helper.stop = function(reason) {
+  return function() {
+    console.log('stopped ' + reason);
+    skybot.reset();
+    skybot.stop();
+  };
+}
+
+/**
  *  Utils
  */
 
