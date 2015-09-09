@@ -179,7 +179,7 @@ module.exports.helper.go = function(latitude, longitude) {
   return function() {return skybot.go(latitude, longitude)};
 }
 
-module.exports.helper.start() {
+module.exports.helper.start = function() {
   skybot.start();
   return skybot.takeOff();
 }
