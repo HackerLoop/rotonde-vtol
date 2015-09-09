@@ -213,7 +213,7 @@ module.exports.onReady = function(onReady, onError) {
     );
 
     client.connect();
-  }
+  });
 };
 
 /**
