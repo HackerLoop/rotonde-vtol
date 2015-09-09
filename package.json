@@ -12,5 +12,5 @@
     "lodash": "^3.10.1",
     "promise": "^7.0.4",
     "skybot-client": "git+ssh://git@github.com/openskybot/skybot-client.js.git"
-  },
+  }
 }
