@@ -6,6 +6,7 @@ var UAVWatcher = require('./uavwatcher');
 var Client = require('skybot-client');
 
 var uavwatcher;
+module.exports.uavwatcher = uavwatcher;
 
 /**
  *  SkybotControl constants
