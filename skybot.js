@@ -215,11 +215,12 @@ function idle() {
 // We chose to leave this for later, as a more global solution might arise.
 var client = Client('ws://127.0.0.1:4224/uav', {debug: false});
 
-module.exports.onReady = function(onReady, onError) {
+module.exports.onReady = function(onReady, onError, uavNames) {
+  uavNames = uavNames || [];
   client.onReady(function() {
     uavwatcher = new UAVWatcher(client.definitionsStore);
 
-    client.requestValuesForUavs([UAV_NAME, UAV_STATUS_NAME]).then(
+    client.requestValuesForUavs([UAV_NAME, UAV_STATUS_NAME].concat(uavNames)).then(
       function(values) {
         // load initial values
         uavwatcher.push(SKYBOT_ID, {controlType: controlTypes.IDLE, forward: 0, left: 0, up: 0, latitude: 0, longitude: 0}).done();
