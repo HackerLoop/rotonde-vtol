@@ -358,7 +358,7 @@ MockStates.Error = (function() {
       _.forEach(_.keys(systemalarms.Alarm), function(key) {
         var status = systemalarms.Alarm[key];
         if (status == 'Error' || status == 'Critical') {
-          console.log(key + ' : ' + status);
+          console.error(key + ' : ' + status);
           error = true;
         }
       });
