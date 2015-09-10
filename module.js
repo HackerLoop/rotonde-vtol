@@ -127,20 +127,15 @@ var initialSkybotValue = {
   longitude: 0,
 };
 
-var uavwatcher;
-
 /**
  *  Connection configuration and initialization
  */
 var client = Client('ws://127.0.0.1:4224/uav');
 
-client.onReady(function() {
-  client.connection.sendDefinition(SkybotDefinition);
-  client.connection.sendDefinition(SkybotStatusDefinition);
+var uavwatcher = new UAVWatcher(client.definitionsStore);
 
-  uavwatcher = new UAVWatcher(client.definitionsStore);
-  uavwatcher.push(SKYBOT_ID, initialSkybotValue);
-  uavwatcher.push(SKYBOT_STATUS_ID, initialSkybotStatusValue);
+client.onReady(function() {
+
 
   client.requestValuesForUavs(['GCSReceiver', 'ManualControlSettings', 'FlightStatus', 'SystemAlarms', 'GPSPosition']).then(
     function(values) {
@@ -148,6 +143,15 @@ client.onReady(function() {
       _.forEach(values, function(value) {
         uavwatcher.push(value.objectId, value.data).done();
       });
+
+      uavwatcher.push(SKYBOT_ID, initialSkybotValue);
+      uavwatcher.push(SKYBOT_STATUS_ID, initialSkybotStatusValue);
+      client.updateHandlers.attach(UAV_NAME, onUpdate);
+      client.requestHandlers.attach(UAV_NAME, onRequest);
+      client.requestHandlers.attach(UAV_STATUS_NAME, onRequest);
+
+      client.connection.sendDefinition(SkybotDefinition);
+      client.connection.sendDefinition(SkybotStatusDefinition);
 
       client.updateHandlers.attach(UAV_NAME, onUpdate);
       client.requestHandlers.attach(UAV_NAME, onRequest);
