@@ -1,3 +1,4 @@
+// TODO: Rename StateMachine into BehavioralTree
 /**
  * State definition (all optionals):
  *  {
