@@ -164,7 +164,7 @@ client.onReady(function() {
       console.log('Started');
     },
     function(errors) {
-      console.log(errors);
+      console.error(errors);
     }
   );
 
