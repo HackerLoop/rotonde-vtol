@@ -8,10 +8,9 @@
   },
   "author": "",
   "license": "ISC",
-  "bin": {"skybot-control": "./module.js"},
   "dependencies": {
     "lodash": "^3.10.1",
     "promise": "^7.0.4",
-    "skybot-client": "git+ssh://git@github.com/openskybot/skybot-client.js.git"
+    "rotonde-client": "file:../rotonde-client.js"
   }
 }

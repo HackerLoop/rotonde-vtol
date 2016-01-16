@@ -4,8 +4,8 @@ var _ = require('lodash');
 
 class UAVContainer {
 
-  constructor(objectId, value) {
-    this.objectId = objectId;
+  constructor(identifier, value) {
+    this.identifier = identifier;
     this.previousValues = [];
     this.currentValue = {value: _.cloneDeep(value), timeFrom: new Date().getTime(), timeTo: null};
     this.initialValue = _.cloneDeep(this.currentValue);
@@ -46,35 +46,16 @@ class UAVContainer {
 
 class UAVWatcher {
 
-  constructor(definitionsStore) {
-    this.definitionsStore = definitionsStore;
+  constructor() {
     this.containers = {};
   }
 
-  objectIdOrName(objectIdOrName) {
-    var objectId;
-
-    if (isNaN(parseInt(objectIdOrName))) {
-      var definition = this.definitionsStore.getDefinitionByName(objectIdOrName);
-      if (_.isUndefined(definition)) {
-        return null;
-      }
-      objectId = definition.id;
-    } else {
-      objectId = objectIdOrName;
-    }
-
-    return objectId;
-  }
-
   // value is what you get from the payload.data field of an update
-  push(objectIdOrName, value) {
-    var objectId = this.objectIdOrName(objectIdOrName);
-
-    var container = this.containers[objectId];
+  push(identifier, value) {
+    var container = this.containers[identifier];
     if (container === undefined) {
-      container = new UAVContainer(objectId, value);
-      this.containers[objectId] = container;
+      container = new UAVContainer(identifier, value);
+      this.containers[identifier] = container;
     } else {
       container.update(value);
     }
@@ -89,17 +70,13 @@ class UAVWatcher {
     });
   }
 
-  valueForUAV(objectIdOrName) {
-    var objectId = this.objectIdOrName(objectIdOrName);
-
-    var container = this.containers[objectId];
+  get(identifier) {
+    var container = this.containers[identifier];
     return container ? container.currentValue.value : {};
   }
 
-  resetUAV(objectIdOrName) {
-    var objectId = this.objectIdOrName(objectIdOrName);
-
-    var container = this.containers[objectId];
+  reset(identifier) {
+    var container = this.containers[identifier];
     container.reset();
     return container ? container.currentValue.value : {};
   }
