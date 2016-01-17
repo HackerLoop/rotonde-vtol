@@ -151,16 +151,23 @@ client.onReady(() => {
     if (identifier.startsWith('SET_') && identifier.endsWith('META')) {
       const getterIdentifier = identifier.replace('SET_', 'GET_');
       const updateIdentifier = identifier.replace('SET_', '');
-      client.bootstrap(_.set({}, getterIdentifier, {}), [updateIdentifier], []).then((values) => {
+      client.bootstrap(_.set({}, getterIdentifier, {}), [updateIdentifier], [], 5000).then((values) => {
         let e = values[0];
         let modes = e.data.modes & 207;
         if (_.includes(WATCHED_UAVO, updateIdentifier.replace('META', ''))) {
           modes = e.data.modes & 239;
         }
 
+        if (e.data.modes == modes) {
+          return;
+        }
+
         client.sendAction(identifier, {
           "modes": modes, "periodFlight": 0, "periodGCS": 0, "periodLog": 0,
         });
+      }, (errors) => {
+        console.log(errors);
+        process.exit()
       });
     }
   });
@@ -176,7 +183,7 @@ client.onReady(() => {
 
   client.bootstrap(_.reduce(WATCHED_UAVO, (result, identifier) => _.set(result, 'GET_' + identifier, {}), {}),
                    WATCHED_UAVO,
-                   _.reduce(WATCHED_UAVO, (result, identifier) => result.push(identifier, 'GET_' + identifier, 'SET_' + identifier) && result, [])
+                   _.reduce(WATCHED_UAVO, (result, identifier) => result.push(identifier, 'GET_' + identifier, 'SET_' + identifier) && result, []), 5000
   ).then((values) => {
       // load initial values for the requested uavs
       console.log('subscribing to WATCHED_UAVO');
@@ -192,6 +199,7 @@ client.onReady(() => {
     },
     (errors) => {
       console.error(errors);
+      process.exit();
     }
   );
 

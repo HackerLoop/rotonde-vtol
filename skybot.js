@@ -155,7 +155,7 @@ module.exports.onReady = function(onReady, onError, uavNames) {
 
   client.onReady(() => {
 
-    client.bootstrap({'VTOL_GET_STATUS': {}}, ['VTOL_STATUS'], []).then(
+    client.bootstrap({'VTOL_GET_STATUS': {}}, ['VTOL_STATUS'], [], 5000).then(
       (values) => {
         status = values[0].data;
 
@@ -171,8 +171,8 @@ module.exports.onReady = function(onReady, onError, uavNames) {
         onReady(client);
       },
       (errors) => {
-        console.log(errors);
         onError(errors);
+        process.exit();
       }
     );
 
