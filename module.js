@@ -10,7 +10,7 @@ const UAVWatcher = require('./uavwatcher');
 const StateMachine = require('./state_machine');
 const newClient = require('rotonde-client/src/Client');
 
-const client = newClient('ws://127.0.0.1:4224/uav');
+const client = newClient('ws://127.0.0.1:4224/');
 
 const uavwatcher = new UAVWatcher();
 const localwatcher = new UAVWatcher();
@@ -45,6 +45,11 @@ client.addLocalDefinition('action', 'VTOL_LOITER', [
     name: 'up',
     type: 'number',
     units: 'm/s',
+  },
+  {
+    name: 'duration',
+    type: 'number',
+    units: 'ms',
   },
 ]);
 
@@ -129,6 +134,13 @@ client.actionHandlers.attach('VTOL_LOITER', (a) => {
     return;
 
   localwatcher.push('VTOL_STATE', _.merge({controlType: 'LOITER'}, a.data));
+  setTimeout(() => {
+    const vtolStatus = localwatcher.get('VTOL_STATUS');
+    if (vtolStatus.state !== 'LOITERING') {
+      return;
+    }
+    localwatcher.push('VTOL_STATE', {controlType: 'IDLE', duration: 0, forward: 0, left: 0, up: 0});
+  }, a.data.duration);
 });
 
 client.actionHandlers.attach('VTOL_GOTO', (a) => {
