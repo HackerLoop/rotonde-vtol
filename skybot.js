@@ -10,16 +10,16 @@ let status = {};
  * control functions
  */
 
-module.exports.start = function() {
+module.exports.start = () => {
   running = true;
   sendPing();
 }
 
-module.exports.stop = function() {
+module.exports.stop = () => {
   running = false;
 }
 
-module.exports.waitIdle = function() {
+module.exports.waitIdle = () => {
   return new Promise(function(resolve, reject) {
     if (status.state == 'IDLE') {
       resolve();
@@ -33,7 +33,7 @@ module.exports.waitIdle = function() {
   });
 }
 
-module.exports.takeOff = function() {
+module.exports.takeOff = () => {
   console.log('takeOff');
 
   client.sendAction('VTOL_TAKEOFF', {});
@@ -47,7 +47,7 @@ module.exports.takeOff = function() {
   });
 }
 
-module.exports.land = function() {
+module.exports.land = () => {
   console.log('land');
 
   client.sendAction('VTOL_LAND', {});
@@ -104,14 +104,14 @@ module.exports.go = function(latitude, longitude) {
 
 module.exports.helper = {};
 module.exports.helper.loiter = function(forward, left, up, duration) {
-  return function() {return module.exports.loiter(forward, left, up, duration)};
+  return () => {return module.exports.loiter(forward, left, up, duration)};
 }
 
 module.exports.helper.go = function(latitude, longitude) {
-  return function() {return module.exports.go(latitude, longitude)};
+  return () => {return module.exports.go(latitude, longitude)};
 }
 
-module.exports.helper.start = function() {
+module.exports.helper.start = () => {
   console.log('module.exports.helper.start');
   module.exports.start();
   return module.exports.takeOff();
@@ -120,7 +120,6 @@ module.exports.helper.start = function() {
 module.exports.helper.stop = function(reason) {
   return function(e) {
     console.log('stopped ' + reason, ' ', e || '');
-    module.exports.reset();
     module.exports.stop();
   };
 }
@@ -148,7 +147,7 @@ const client = newClient('ws://127.0.0.1:4224/');
 
 module.exports.onReady = function(onReady, onError, uavNames) {
   uavNames = uavNames || [];
-  client.onReady(function() {
+  client.onReady(() => {
 
     client.bootstrap({'VTOL_GET_STATUS': {}}, ['VTOL_STATUS'], []).then(
       (values) => {

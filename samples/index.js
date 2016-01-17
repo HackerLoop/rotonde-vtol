@@ -13,7 +13,8 @@ function onReady(client) {
   .then(helper.loiter(0, 0, 5, 2000))
   .then(helper.go(Math.random() * 180, Math.random() * 360))
   .then(skybot.land)
-  .then(helper.stop('done'), helper.stop('error'));
+  .then(helper.stop('done'), helper.stop('error'))
+  .then(process.exit);
 }
 
 function onError(errors) {
