@@ -2,7 +2,7 @@
 
 'use strict';
 
-const MOCK_STATES = true;
+const MOCK_STATES = false;
 
 const _ = require('lodash');
 
@@ -143,7 +143,7 @@ localwatcher.push('VTOL_STATE', {
 client.onReady(() => {
 
   // mute updates
-  const WATCHED_UAVO = ['FLIGHTSTATUS', 'SYSTEMALARMS', 'BAROALTITUDE', 'GCSRECEIVER', 'MANUALCONTROLSETTINGS'];
+  const WATCHED_UAVO = ['ACTUATORCOMMAND', 'FLIGHTSTATUS', 'SYSTEMALARMS', 'BAROALTITUDE', 'ALTITUDEHOLDDESIRED', 'GCSRECEIVER', 'MANUALCONTROLSETTINGS'];
 
   client.definitionHandlers.attach('*', (definition) => {
     const identifier = definition.identifier;
@@ -158,13 +158,16 @@ client.onReady(() => {
           modes = e.data.modes & 239;
         }
 
+        let value = {
+          "modes": modes, "periodFlight": 0, "periodGCS": 0, "periodLog": 0,
+        };
+        uavwatcher.push(updateIdentifier, value).done();
+
         if (e.data.modes == modes) {
           return;
         }
 
-        client.sendAction(identifier, {
-          "modes": modes, "periodFlight": 0, "periodGCS": 0, "periodLog": 0,
-        });
+        client.sendAction(identifier, value);
       }, (errors) => {
         console.log(errors);
         process.exit()
@@ -194,6 +197,7 @@ client.onReady(() => {
         });
       });
 
+      setupFC();
       addLocalDefinitions();
       initStates();
     },
@@ -215,7 +219,7 @@ client.connect();
  *  State machine management
  */
 
-var machine;
+let machine;
 
 /**
  * Chaining conditions
@@ -267,19 +271,19 @@ function shouldWait() {
  *  States definition
  */
 
-var MockStates = {};
+let MockStates = {};
 
 MockStates.Idle = (() => {
   return {
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'IDLE'});
-      console.log('Started state ' + 'IDLE');
+      console.log('Started state IDLE');
     }
   };
 })();
 
 MockStates.TakingOff = (() => {
-  var working = false;
+  let working = false;
   return {
     priority: 10,
     canTrigger: () => {
@@ -291,7 +295,7 @@ MockStates.TakingOff = (() => {
       setTimeout(() => {
         working = false;
       }, 3000);
-      console.log('Started state ' + 'TAKINGOFF');
+      console.log('Started state TAKINGOFF');
     },
     update: () => {
       return working;
@@ -302,7 +306,7 @@ MockStates.TakingOff = (() => {
 })();
 
 MockStates.Landing = (() => {
-  var working = false;
+  let working = false;
   return {
     priority: 10,
     canTrigger: () => {
@@ -314,7 +318,7 @@ MockStates.Landing = (() => {
       setTimeout(() => {
         working = false;
       }, 3000);
-      console.log('Started state ' + 'LANDING');
+      console.log('Started state LANDING');
     },
     update: () => {
       return working;
@@ -326,7 +330,7 @@ MockStates.Landing = (() => {
 })();
 
 MockStates.Loitering = (() => {
-  var working = false;
+  let working = false;
   return {
     priority: 5,
     canTrigger: () => {
@@ -335,7 +339,7 @@ MockStates.Loitering = (() => {
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'LOITERING'});
       working = true;
-      console.log('Started state ' + 'LOITERING');
+      console.log('Started state LOITERING');
     },
     update: () => {
       return shouldLoiter();
@@ -347,8 +351,8 @@ MockStates.Loitering = (() => {
 })();
 
 MockStates.GoingTo = (() => {
-  var working = false;
-  var currentPosition = {latitude: 0, longitude: 0};
+  let working = false;
+  let currentPosition = {latitude: 0, longitude: 0};
   return {
     priority: 5,
     canTrigger: () => {
@@ -365,7 +369,7 @@ MockStates.GoingTo = (() => {
         currentPosition = {latitude: vtolState.latitude, longitude: vtolState.longitude};
         working = false;
       }, 10000);
-      console.log('Started state ' + 'GOINGTO');
+      console.log('Started state GOINGTO');
     },
     update: () => {
       return working;
@@ -383,14 +387,14 @@ MockStates.Waiting = (() => {
     },
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'WAITING'});
-      console.log('Started state ' + 'WAITING');
+      console.log('Started state WAITING');
     },
   };
 })();
 
 let ErrorState = (() => {
   let hasAlarms = () => {
-    var error = false;
+    let error = false;
     const systemalarms = uavwatcher.get('SYSTEMALARMS');
     _.forEach(_.keys(systemalarms.Alarm), function(key) {
       const status = systemalarms.Alarm[key];
@@ -410,7 +414,7 @@ let ErrorState = (() => {
       localwatcher.push('VTOL_STATUS', {state: 'ERROR'});
       undirtyWatcherAndSend();
       process.exit();
-      console.log('Started state ' + 'ERROR');
+      console.log('Started state ERROR');
     },
     update: hasAlarms,
   };
@@ -422,25 +426,78 @@ MockStates.Error = ErrorState;
  *  real states
  */
 
-var States = {};
+let States = {};
 
 States.Idle = (() => {
   return {
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'IDLE'});
-      console.log('Started state ' + 'IDLE');
+      console.log('Started state IDLE');
     }
   };
 })();
 
 States.TakingOff = (() => {
-  const steps = {
-    SETUP_GCS: 'SETUP_GCS',
-    ZERO_THROTTLE: 'ZERO_THROTTLE',
-    STABILIZED_MOD: 'STABILIZED_MOD',
-    TEST_ACTUATORS: 'TEST_ACTUATORS',
+  let machine;
+
+  let createTestActuators = () => {
+    return {
+      priority: 20,
+      start() {
+        console.log('Started TestActuators stage');
+        flightMode('Stabilized1');
+        setPeriodic('ACTUATORCOMMAND', true, 100);
+      },
+      update() {
+        gcsReceiverChannel(0, -0.9);
+        return this._checkActuators();
+      },
+      end() {
+        setPeriodic('ACTUATORCOMMAND', false, 0);
+        gcsReceiverChannel(0, -1);
+      },
+      next: createTakeOff(),
+      _checkActuators() {
+        let channels = uavwatcher.get('ACTUATORCOMMAND').Channel;
+        let allDefault = true;
+        let diff = -10000;
+        _.forEach(channels, (channel1) => {
+          _.forEach(channels, (channel2) => {
+            allDefault = channel1 == 1000 && channel2 == 1000 ? allDefault : false;
+            let newDiff = Math.abs(channel1 - channel2);
+            if (newDiff > diff) {
+              diff = newDiff;
+            }
+          });
+        });
+        if (!allDefault && diff < 300) {
+          return false;
+        }
+        return true;
+      }
+    };
+  }
+
+  let createTakeOff = () => {
+    return {
+      priority: 40,
+      start() {
+        console.log('Started TakeOff stage');
+        this.currentThrottle = -0.9;
+        flightMode('AltitudeHold');
+        setPeriodic('BAROALTITUDE', true, 50)
+      },
+      update() {
+        let altitude = uavwatcher.get('BAROALTITUDE');
+        this.currentThrottle += (0 - this.currentThrottle) * 0.05;
+        gcsReceiverChannel(0, this.currentThrottle);
+        return true;
+      },
+      end() {
+        setPeriodic('BAROALTITUDE', false, 0)
+      }
+    };
   };
-  var step = steps.SETUP_GCS;
 
   return {
     priority: 10,
@@ -448,37 +505,25 @@ States.TakingOff = (() => {
       return shouldTakeOff();
     },
     start: () => {
-      step = steps.SETUP_GCS;
+      machine = StateMachine.newMachine();
+      machine.addState(createTestActuators());
+
       localwatcher.push('VTOL_STATUS', {state: 'TAKINGOFF'});
-      console.log('Started state ' + 'TAKINGOFF');
+      console.log('Started state TAKINGOFF');
     },
     update: () => {
-      switch(step) {
-      case steps.SETUP_GCS:
-        gcsControl();
-        step = steps.ZERO_THROTTLE;
-        break;
-      case steps.ZERO_THROTTLE:
-        gcsReceiverChannel(0, -1);
-        step = steps.STABILIZED_MOD;
-        break;
-      case steps.STABILIZED_MOD:
-        flightMode('Stabilized1');
-        step = steps.TEST_ACTUATORS;
-        break;
-      case steps.TEST_ACTUATORS:
-        gcsReceiverChannel(0, -0.9);
-        break;
-      }
-      return true;
+      return machine.update();
     },
     end: () => {
+      if (machine) {
+        machine.end();
+      }
     }
   };
 })();
 
 States.Landing = (() => {
-  var working = false;
+  let working = false;
   return {
     priority: 10,
     canTrigger: () => {
@@ -490,7 +535,7 @@ States.Landing = (() => {
       setTimeout(() => {
         working = false;
       }, 3000);
-      console.log('Started state ' + 'LANDING');
+      console.log('Started state LANDING');
     },
     update: () => {
       return working;
@@ -502,7 +547,7 @@ States.Landing = (() => {
 })();
 
 States.Loitering = (() => {
-  var working = false;
+  let working = false;
   return {
     priority: 5,
     canTrigger: () => {
@@ -511,13 +556,10 @@ States.Loitering = (() => {
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'LOITERING'});
       working = true;
-      setTimeout(() => {
-        working = false;
-      }, 1000);
-      console.log('Started state ' + 'LOITERING');
+      console.log('Started state LOITERING');
     },
     update: () => {
-      return working;
+      return shouldLoiter();
     },
     end: () => {
     }
@@ -526,19 +568,25 @@ States.Loitering = (() => {
 })();
 
 States.GoingTo = (() => {
-  var working = false;
+  let working = false;
+  let currentPosition = {latitude: 0, longitude: 0};
   return {
     priority: 5,
     canTrigger: () => {
-      return shouldGoto();
+      const vtolState = localwatcher.get('VTOL_STATE');
+      return shouldGoto() &&
+             (vtolState.latitude != currentPosition.latitude ||
+             vtolState.longitude != currentPosition.longitude);
     },
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'GOINGTO'});
       working = true;
       setTimeout(() => {
+        const vtolState = localwatcher.get('VTOL_STATE');
+        currentPosition = {latitude: vtolState.latitude, longitude: vtolState.longitude};
         working = false;
       }, 10000);
-      console.log('Started state ' + 'GOINGTO');
+      console.log('Started state GOINGTO');
     },
     update: () => {
       return working;
@@ -556,7 +604,7 @@ States.Waiting = (() => {
     },
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'WAITING'});
-      console.log('Started state ' + 'WAITING');
+      console.log('Started state WAITING');
     },
   };
 })();
@@ -585,7 +633,7 @@ function work() {
 
 function undirtyWatcherAndSend() {
   uavwatcher.forEachDirty(function(container) {
-    client.sendEvent('SET_' + container.identifier, container.currentValue.value);
+    client.sendAction('SET_' + container.identifier, container.currentValue.value);
     container.done();
   });
   localwatcher.forEachDirty(function(container) {
@@ -599,88 +647,131 @@ function undirtyWatcherAndSend() {
  */
 
 const GCSReceiverChannelValues = {
-  MIN: 1000,
-  MED: 1500,
+  MIN: 0,
+  MED: 1000,
   MAX: 2000
 };
 
-function gcsControl() {
+function setPeriodic(identifier, onUpdate, period) {
+  let metaIdentifier = identifier + 'META';
+  let value = uavwatcher.getInitialValue(metaIdentifier);
+  if (_.isEqual({}, value)) {
+    return;
+  }
+  uavwatcher.push(metaIdentifier, {
+    modes: onUpdate ? value.modes | 16 : value.modes,
+    periodFlight: period,
+  });
+}
+
+function setupFC() {
   uavwatcher.push('MANUALCONTROLSETTINGS', {
-    Arming: 'Switch',
-    ArmedTimeout:0,
-    ArmTimeoutAutonomous:'DISABLED',
-    FlightModeNumber:1,
-    ChannelNeutral: {
-      Accessory0:GCSReceiverChannelValues.MED,
-      Accessory1:GCSReceiverChannelValues.MED,
-      Accessory2:GCSReceiverChannelValues.MED,
-      Arming:GCSReceiverChannelValues.MED,
-      Collective:GCSReceiverChannelValues.MED,
-      FlightMode:GCSReceiverChannelValues.MED,
-      Pitch:GCSReceiverChannelValues.MED,
-      Roll:GCSReceiverChannelValues.MED,
-      Throttle:GCSReceiverChannelValues.MED,
-      Yaw:GCSReceiverChannelValues.MED
-    },
-    ChannelNumber: {
-      Accessory0:0,
-      Accessory1:0,
-      Accessory2:0,
-      Arming:5,
-      Collective:0,
-      FlightMode:0,
-      Pitch:3,
-      Roll:2,
-      Throttle:1,
-      Yaw:4
-    },
-    ChannelMin: {
-      Accessory0:GCSReceiverChannelValues.MIN,
-      Accessory1:GCSReceiverChannelValues.MIN,
-      Accessory2:GCSReceiverChannelValues.MIN,
-      Arming:GCSReceiverChannelValues.MIN,
-      Collective:GCSReceiverChannelValues.MIN,
-      FlightMode:GCSReceiverChannelValues.MIN,
-      Pitch:GCSReceiverChannelValues.MIN,
-      Roll:GCSReceiverChannelValues.MIN,
-      Throttle:GCSReceiverChannelValues.MIN,
-      Yaw:GCSReceiverChannelValues.MIN
+    ArmTime: '1000',
+    ArmTimeoutAutonomous: 'DISABLED',
+    ArmedTimeout: 0,
+    Arming: 'Always Armed',
+    ChannelGroups: {
+      Accessory0: 'None',
+      Accessory1: 'None',
+      Accessory2: 'None',
+      Arming: 'None',
+      Collective: 'None',
+      FlightMode: 'None',
+      Pitch: 'GCS',
+      Roll: 'GCS',
+      Throttle: 'GCS',
+      Yaw: 'GCS'
     },
     ChannelMax: {
-      Accessory0:GCSReceiverChannelValues.MAX,
-      Accessory1:GCSReceiverChannelValues.MAX,
-      Accessory2:GCSReceiverChannelValues.MAX,
-      Arming:GCSReceiverChannelValues.MAX,
-      Collective:GCSReceiverChannelValues.MAX,
-      FlightMode:GCSReceiverChannelValues.MAX,
-      Pitch:GCSReceiverChannelValues.MAX,
-      Roll:GCSReceiverChannelValues.MAX,
-      Throttle:GCSReceiverChannelValues.MAX,
-      Yaw:GCSReceiverChannelValues.MAX
+      Accessory0: 0,
+      Accessory1: 0,
+      Accessory2: 0,
+      Arming: 0,
+      Collective: 0,
+      FlightMode: 0,
+      Pitch: GCSReceiverChannelValues.MAX,
+      Roll: GCSReceiverChannelValues.MAX,
+      Throttle: GCSReceiverChannelValues.MAX,
+      Yaw: GCSReceiverChannelValues.MAX
     },
-    ChannelGroups: {
-      Accessory0:'None',
-      Accessory1:'None',
-      Accessory2:'None',
-      Arming:'GCS',
-      Collective:'None',
-      FlightMode:'None',
-      Pitch:'GCS',
-      Roll:'GCS',
-      Throttle:'GCS',
-      Yaw:'GCS' 
+    ChannelMin: {
+      Accessory0: 0,
+      Accessory1: 0,
+      Accessory2: 0,
+      Arming: 0,
+      Collective: 0,
+      FlightMode: 0,
+      Pitch: GCSReceiverChannelValues.MIN,
+      Roll: GCSReceiverChannelValues.MIN,
+      Throttle: GCSReceiverChannelValues.MIN,
+      Yaw: GCSReceiverChannelValues.MIN
+    },
+    ChannelNeutral: {
+      Accessory0: 0,
+      Accessory1: 0,
+      Accessory2: 0,
+      Arming: 0,
+      Collective: 0,
+      FlightMode: 0,
+      Pitch: GCSReceiverChannelValues.MED,
+      Roll: GCSReceiverChannelValues.MED,
+      Throttle: GCSReceiverChannelValues.MIN,
+      Yaw: GCSReceiverChannelValues.MED
+    },
+    ChannelNumber: {
+      Accessory0: 0,
+      Accessory1: 0,
+      Accessory2: 0,
+      Arming: 0,
+      Collective: 0,
+      FlightMode: 0,
+      Pitch: 3,
+      Roll: 2,
+      Throttle: 1,
+      Yaw: 4
+    },
+    Deadband: 0,
+    DisarmTime: '2000',
+    FlightModeNumber: 1,
+    FlightModePosition: [
+      'Stabilized1',
+      'Stabilized1',
+      'Stabilized1',
+      'Stabilized1',
+      'Stabilized1',
+      'Stabilized1'
+    ],
+    RssiChannelNumber: 0,
+    RssiMax: 2000,
+    RssiMin: 1000,
+    RssiType: 'None',
+    Stabilization1Settings: {
+      Pitch: 'Attitude',
+      Roll: 'Attitude',
+      Yaw: 'Rate'
+    },
+    Stabilization2Settings: {
+      Pitch: 'Attitude',
+      Roll: 'Attitude',
+      Yaw: 'Rate'
+    },
+    Stabilization3Settings: {
+      Pitch: 'Attitude',
+      Roll: 'Attitude',
+      Yaw: 'Rate'
     }
-  });
+  }
+                 );
 
   uavwatcher.push('GCSRECEIVER', {
     Channel: [GCSReceiverChannelValues.MIN,
               GCSReceiverChannelValues.MED,
               GCSReceiverChannelValues.MED,
               GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED,
-              GCSReceiverChannelValues.MED]
+              GCSReceiverChannelValues.MIN,
+              GCSReceiverChannelValues.MIN,
+              GCSReceiverChannelValues.MIN,
+              GCSReceiverChannelValues.MIN]
   });
 }
 
@@ -688,16 +779,16 @@ function gcsControl() {
 // to set the right value based on channel min/med/max
 function gcsReceiverChannel(channel, value) {
   const gcsReceiver = _.cloneDeep(uavwatcher.get('GCSRECEIVER'));
-  var convert = 0;
+  let convert = 0;
 
   if (value < 0) {
-    convert = GCSReceiverChannelValues.MED + (GCSReceiverChannelValues.MIN - GCSReceiverChannelValues.MED) * value;
+    convert = GCSReceiverChannelValues.MED + (GCSReceiverChannelValues.MED - GCSReceiverChannelValues.MIN) * value;
   } else if (value > 0) {
     convert = GCSReceiverChannelValues.MED + (GCSReceiverChannelValues.MAX - GCSReceiverChannelValues.MED) * value;
   }
 
   gcsReceiver.Channel[channel] = convert;
-  uavwatcher.push('GCSRECEIVER', gcsReceiver);
+  uavwatcher.push('GCSRECEIVER', gcsReceiver).forceDirty();
 }
 
 /**
@@ -707,8 +798,17 @@ function gcsReceiverChannel(channel, value) {
  * 'PositionHold'
  */
 function flightMode(flightMode) {
-  uavwatcher.push({
-    FlightMode: flightMode,
+  let manualControlSettings = uavwatcher.get('MANUALCONTROLSETTINGS');
+  let FlightModePosition = [
+    flightMode,
+    'Stabilized1',
+    'Stabilized1',
+    'Stabilized1',
+    'Stabilized1',
+    'Stabilized1'
+  ];
+  uavwatcher.push('MANUALCONTROLSETTINGS', {
+    FlightModePosition,
   });
 }
 
@@ -720,13 +820,13 @@ function loiterCommand(loiterCommand) {
  *  Watchdog
  */
 
-var lastUpdate = -1; // watchdog, tracks last update received as a UNIX timestamp,
+let lastUpdate = -1; // watchdog, tracks last update received as a UNIX timestamp,
                      // triggers IDLE status when exceeds MAX_PINGLESS_TIME seconds
 setInterval(() => {
   if (lastUpdate === -1) {
     return;
   }
-  var time = new Date().getTime();
+  let time = new Date().getTime();
   if (time - lastUpdate > MAX_PINGLESS_TIME) {
     console.log('Watchdog fired !');
     localwatcher.push('VTOL_STATUS', {status: 'IDLE'})
