@@ -1,3 +1,4 @@
+'use strict';
 // TODO: Rename StateMachine into BehavioralTree
 /**
  * State definition (all optionals):
@@ -11,15 +12,15 @@
  *  }
  */
 
-var newMachine = function() {
-  var machine = {};
+let newMachine = function() {
+  let machine = {};
 
-  var currentState = null;
-  var states = [];
+  let currentState = null;
+  let states = [];
 
-  var assertState = function(state) {
+  let assertState = function(state) {
     state.priority = state.priority || 0;
-    state.next = null;
+    state.next = state.next || null;
     state.canTrigger = state.canTrigger || function() {return true;};
     state.start = state.start || function() {};
     state.update = state.update || function() {return true;};
@@ -27,7 +28,7 @@ var newMachine = function() {
   };
 
   machine.update = function() {
-    var replacingState, state, i;
+    let replacingState, state, i;
 
     if (currentState) {
       if (currentState.update.apply(currentState, arguments) === false) {
@@ -64,6 +65,13 @@ var newMachine = function() {
     assertState(state);
     states.push(state);
   };
+
+  machine.end = function() {
+    if (!currentState) {
+      return;
+    }
+    currentState.end();
+  }
 
   return machine;
 }
