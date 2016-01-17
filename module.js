@@ -25,59 +25,101 @@ const localwatcher = new UAVWatcher();
 
 const MAX_PINGLESS_TIME = 1000;
 
-client.addLocalDefinition('action', 'VTOL_PING', []);
-client.addLocalDefinition('action', 'VTOL_TAKEOFF', []);
-client.addLocalDefinition('action', 'VTOL_LAND', []);
-client.addLocalDefinition('action', 'VTOL_GET_STATUS', []);
+function addLocalDefinitions() {
+  client.addLocalDefinition('action', 'VTOL_PING', []);
+  client.addLocalDefinition('action', 'VTOL_TAKEOFF', []);
+  client.addLocalDefinition('action', 'VTOL_LAND', []);
+  client.addLocalDefinition('action', 'VTOL_GET_STATUS', []);
 
-client.addLocalDefinition('action', 'VTOL_LOITER', [
-  {
-    name: 'forward',
-    type: 'number',
-    units: 'm/s',
-  },
-  {
-    name: 'right',
-    type: 'number',
-    units: 'm/s',
-  },
-  {
-    name: 'up',
-    type: 'number',
-    units: 'm/s',
-  },
-  {
-    name: 'duration',
-    type: 'number',
-    units: 'ms',
-  },
-]);
+  client.addLocalDefinition('action', 'VTOL_LOITER', [
+    {
+      name: 'forward',
+      type: 'number',
+      units: 'm/s',
+    },
+    {
+      name: 'right',
+      type: 'number',
+      units: 'm/s',
+    },
+    {
+      name: 'up',
+      type: 'number',
+      units: 'm/s',
+    },
+    {
+      name: 'duration',
+      type: 'number',
+      units: 'ms',
+    },
+  ]);
 
-client.addLocalDefinition('action', 'VTOL_GOTO', [
-  {
-    name: 'latitude',
-    type: 'number',
-    units: 'deg',
-  },
-  {
-    name: 'longitude',
-    type: 'number',
-    units: 'deg',
-  },
-]);
+  client.addLocalDefinition('action', 'VTOL_GOTO', [
+    {
+      name: 'latitude',
+      type: 'number',
+      units: 'deg',
+    },
+    {
+      name: 'longitude',
+      type: 'number',
+      units: 'deg',
+    },
+  ]);
 
-client.addLocalDefinition('event', 'VTOL_STATUS', [
-  {
-    name: 'status',
-    type: 'enum()',
-    units: '',
-  },
-  {
-    name: 'state',
-    type: 'enum()',
-    units: '',
-  },
-]);
+  client.addLocalDefinition('event', 'VTOL_STATUS', [
+    {
+      name: 'status',
+      type: 'enum()',
+      units: '',
+    },
+    {
+      name: 'state',
+      type: 'enum()',
+      units: '',
+    },
+  ]);
+
+  client.actionHandlers.attach('*', (a) => {
+    const vtolStatus = localwatcher.get('VTOL_STATUS');
+
+    lastUpdate = new Date().getTime();
+
+    if (vtolStatus.status === 'IDLE') {
+      console.log('exit IDLE state');
+      localwatcher.push('VTOL_STATUS', {status: 'CONNECTED'});
+    }
+  });
+
+  client.actionHandlers.attach('VTOL_GET_STATUS', (a) => {
+    const vtolStatus = localwatcher.get('VTOL_STATUS');
+    client.sendEvent('VTOL_STATUS', vtolStatus);
+  });
+
+  client.actionHandlers.attach('VTOL_TAKEOFF', (a) => {
+    localwatcher.push('VTOL_STATE', {takeoff: true});
+  });
+
+  client.actionHandlers.attach('VTOL_LAND', (a) => {
+    localwatcher.push('VTOL_STATE', {takeoff: false});
+  });
+
+  client.actionHandlers.attach('VTOL_LOITER', (a) => {
+    localwatcher.push('VTOL_STATE', _.merge({controlType: 'LOITER'}, a.data));
+    setTimeout(() => {
+      const vtolStatus = localwatcher.get('VTOL_STATUS');
+      if (vtolStatus.state !== 'LOITERING') {
+        return;
+      }
+      localwatcher.push('VTOL_STATE', {controlType: 'IDLE', duration: 0, forward: 0, left: 0, up: 0});
+    }, a.data.duration);
+  });
+
+  client.actionHandlers.attach('VTOL_GOTO', (a) => {
+    localwatcher.push('VTOL_STATE', _.merge({controlType: 'GOTO'}, a.data));
+  });
+
+}
 
 localwatcher.push('VTOL_STATUS', {
   status: 'IDLE',
@@ -92,63 +134,6 @@ localwatcher.push('VTOL_STATE', {
   up: 0,
   latitude: 0,
   longitude: 0,
-});
-
-client.actionHandlers.attach('*', (a) => {
-  const vtolStatus = localwatcher.get('VTOL_STATUS');
-  if (vtolStatus.status === 'ERROR')
-    return;
-
-  lastUpdate = new Date().getTime();
-
-  if (vtolStatus.status === 'IDLE') {
-    console.log('exit IDLE state');
-    localwatcher.push('VTOL_STATUS', {status: 'CONNECTED'});
-  }
-});
-
-client.actionHandlers.attach('VTOL_GET_STATUS', (a) => {
-  const vtolStatus = localwatcher.get('VTOL_STATUS');
-  client.sendEvent('VTOL_STATUS', vtolStatus);
-});
-
-client.actionHandlers.attach('VTOL_TAKEOFF', (a) => {
-  const vtolStatus = localwatcher.get('VTOL_STATUS');
-  if (vtolStatus.status === 'ERROR')
-    return;
-
-  localwatcher.push('VTOL_STATE', {takeoff: true});
-});
-
-client.actionHandlers.attach('VTOL_LAND', (a) => {
-  const vtolStatus = localwatcher.get('VTOL_STATUS');
-  if (vtolStatus.status === 'ERROR')
-    return;
-
-  localwatcher.push('VTOL_STATE', {takeoff: false});
-});
-
-client.actionHandlers.attach('VTOL_LOITER', (a) => {
-  const vtolStatus = localwatcher.get('VTOL_STATUS');
-  if (vtolStatus.status === 'ERROR')
-    return;
-
-  localwatcher.push('VTOL_STATE', _.merge({controlType: 'LOITER'}, a.data));
-  setTimeout(() => {
-    const vtolStatus = localwatcher.get('VTOL_STATUS');
-    if (vtolStatus.state !== 'LOITERING') {
-      return;
-    }
-    localwatcher.push('VTOL_STATE', {controlType: 'IDLE', duration: 0, forward: 0, left: 0, up: 0});
-  }, a.data.duration);
-});
-
-client.actionHandlers.attach('VTOL_GOTO', (a) => {
-  const vtolStatus = localwatcher.get('VTOL_STATUS');
-  if (vtolStatus.status === 'ERROR')
-    return;
-
-  localwatcher.push('VTOL_STATE', _.merge({controlType: 'GOTO'}, a.data));
 });
 
 /**
@@ -202,16 +187,17 @@ client.onReady(() => {
         });
       });
 
+      addLocalDefinitions();
       initStates();
     },
-    function(errors) {
+    (errors) => {
       console.error(errors);
     }
   );
 
 });
 
-process.on('exit', function(code) {
+process.on('exit', (code) => {
   console.log('About to exit');
 });
 
@@ -275,146 +261,154 @@ function shouldWait() {
 
 var MockStates = {};
 
-MockStates.Idle = (function() {
+MockStates.Idle = (() => {
   return {
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'IDLE'});
       console.log('Started state ' + 'IDLE');
     }
   };
 })();
 
-MockStates.TakingOff = (function() {
+MockStates.TakingOff = (() => {
   var working = false;
   return {
     priority: 10,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldTakeOff();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'TAKINGOFF'});
       working = true;
-      setTimeout(function() {
+      setTimeout(() => {
         working = false;
       }, 3000);
       console.log('Started state ' + 'TAKINGOFF');
     },
-    update: function() {
+    update: () => {
       return working;
     },
-    end: function() {
+    end: () => {
     }
   };
 })();
 
-MockStates.Landing = (function() {
+MockStates.Landing = (() => {
   var working = false;
   return {
     priority: 10,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldLand();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'LANDING'});
       working = true;
-      setTimeout(function() {
+      setTimeout(() => {
         working = false;
       }, 3000);
       console.log('Started state ' + 'LANDING');
     },
-    update: function() {
+    update: () => {
       return working;
     },
-    end: function() {
+    end: () => {
     }
   };
 
 })();
 
-MockStates.Loitering = (function() {
+MockStates.Loitering = (() => {
   var working = false;
   return {
     priority: 5,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldLoiter();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'LOITERING'});
       working = true;
       console.log('Started state ' + 'LOITERING');
     },
-    update: function() {
+    update: () => {
       return shouldLoiter();
     },
-    end: function() {
+    end: () => {
     }
   };
 
 })();
 
-MockStates.GoingTo = (function() {
+MockStates.GoingTo = (() => {
   var working = false;
   var currentPosition = {latitude: 0, longitude: 0};
   return {
     priority: 5,
-    canTrigger: function() {
+    canTrigger: () => {
       const vtolState = localwatcher.get('VTOL_STATE');
       return shouldGoto() &&
              (vtolState.latitude != currentPosition.latitude ||
              vtolState.longitude != currentPosition.longitude);
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'GOINGTO'});
       working = true;
-      setTimeout(function() {
+      setTimeout(() => {
         const vtolState = localwatcher.get('VTOL_STATE');
         currentPosition = {latitude: vtolState.latitude, longitude: vtolState.longitude};
         working = false;
       }, 10000);
       console.log('Started state ' + 'GOINGTO');
     },
-    update: function() {
+    update: () => {
       return working;
     },
-    end: function() {
+    end: () => {
     }
   };
 })();
 
-MockStates.Waiting = (function() {
+MockStates.Waiting = (() => {
   return {
     priority: 1,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldWait();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'WAITING'});
       console.log('Started state ' + 'WAITING');
     },
   };
 })();
 
-MockStates.Error = (function() {
+let ErrorState = (() => {
+  let hasAlarms = () => {
+    var error = false;
+    const systemalarms = uavwatcher.get('SYSTEMALARMS');
+    _.forEach(_.keys(systemalarms.Alarm), function(key) {
+      const status = systemalarms.Alarm[key];
+      if (status == 'Error' || status == 'Critical') {
+        console.error(key + ' : ' + status);
+        error = true;
+      }
+    });
+    return error;
+  }
   return {
     priority: 20,
-    canTrigger: function() {
-      var error = false;
-      const systemalarms = uavwatcher.get('SYSTEMALARMS');
-      _.forEach(_.keys(systemalarms.Alarm), function(key) {
-        const status = systemalarms.Alarm[key];
-        if (status == 'Error' || status == 'Critical') {
-          console.error(key + ' : ' + status);
-          error = true;
-        }
-      });
-      return error;
+    canTrigger: () => {
+      return hasAlarms();
     },
-    start: function() {
-      localwatcher.push('VTOL_STATUS', {state: 'ERROR', status: 'ERROR'});
+    start: () => {
+      localwatcher.push('VTOL_STATUS', {state: 'ERROR'});
+      undirtyWatcherAndSend();
+      process.exit();
       console.log('Started state ' + 'ERROR');
     },
+    update: hasAlarms,
   };
 })()
+
+MockStates.Error = ErrorState;
 
 /**
  *  real states
@@ -422,16 +416,16 @@ MockStates.Error = (function() {
 
 var States = {};
 
-States.Idle = (function() {
+States.Idle = (() => {
   return {
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'IDLE'});
       console.log('Started state ' + 'IDLE');
     }
   };
 })();
 
-States.TakingOff = (function() {
+States.TakingOff = (() => {
   const steps = {
     SETUP_GCS: 'SETUP_GCS',
     ZERO_THROTTLE: 'ZERO_THROTTLE',
@@ -442,15 +436,15 @@ States.TakingOff = (function() {
 
   return {
     priority: 10,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldTakeOff();
     },
-    start: function() {
+    start: () => {
       step = steps.SETUP_GCS;
       localwatcher.push('VTOL_STATUS', {state: 'TAKINGOFF'});
       console.log('Started state ' + 'TAKINGOFF');
     },
-    update: function() {
+    update: () => {
       switch(step) {
       case steps.SETUP_GCS:
         gcsControl();
@@ -470,94 +464,96 @@ States.TakingOff = (function() {
       }
       return true;
     },
-    end: function() {
+    end: () => {
     }
   };
 })();
 
-States.Landing = (function() {
+States.Landing = (() => {
   var working = false;
   return {
     priority: 10,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldLand();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'LANDING'});
       working = true;
-      setTimeout(function() {
+      setTimeout(() => {
         working = false;
       }, 3000);
       console.log('Started state ' + 'LANDING');
     },
-    update: function() {
+    update: () => {
       return working;
     },
-    end: function() {
+    end: () => {
     }
   };
 
 })();
 
-States.Loitering = (function() {
+States.Loitering = (() => {
   var working = false;
   return {
     priority: 5,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldLoiter();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'LOITERING'});
       working = true;
-      setTimeout(function() {
+      setTimeout(() => {
         working = false;
       }, 1000);
       console.log('Started state ' + 'LOITERING');
     },
-    update: function() {
+    update: () => {
       return working;
     },
-    end: function() {
+    end: () => {
     }
   };
 
 })();
 
-States.GoingTo = (function() {
+States.GoingTo = (() => {
   var working = false;
   return {
     priority: 5,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldGoto();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'GOINGTO'});
       working = true;
-      setTimeout(function() {
+      setTimeout(() => {
         working = false;
       }, 10000);
       console.log('Started state ' + 'GOINGTO');
     },
-    update: function() {
+    update: () => {
       return working;
     },
-    end: function() {
+    end: () => {
     }
   };
 })();
 
-States.Waiting = (function() {
+States.Waiting = (() => {
   return {
     priority: 1,
-    canTrigger: function() {
+    canTrigger: () => {
       return shouldWait();
     },
-    start: function() {
+    start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'WAITING'});
       console.log('Started state ' + 'WAITING');
     },
   };
 })();
+
+States.Error = ErrorState;
 
 function initStates() {
   const s = (MOCK_STATES ? MockStates : States);
@@ -569,7 +565,7 @@ function initStates() {
   machine.addState(s.Loitering);
   machine.addState(s.Waiting);
   machine.addState(s.GoingTo);
-  //machine.addState(s.Error);
+  machine.addState(s.Error);
 
   setInterval(work, 50);
 }
@@ -718,7 +714,7 @@ function loiterCommand(loiterCommand) {
 
 var lastUpdate = -1; // watchdog, tracks last update received as a UNIX timestamp,
                      // triggers IDLE status when exceeds MAX_PINGLESS_TIME seconds
-setInterval(function() {
+setInterval(() => {
   if (lastUpdate === -1) {
     return;
   }

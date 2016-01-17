@@ -112,7 +112,6 @@ module.exports.helper.go = function(latitude, longitude) {
 }
 
 module.exports.helper.start = () => {
-  console.log('module.exports.helper.start');
   module.exports.start();
   return module.exports.takeOff();
 }
@@ -147,6 +146,13 @@ const client = newClient('ws://127.0.0.1:4224/');
 
 module.exports.onReady = function(onReady, onError, uavNames) {
   uavNames = uavNames || [];
+
+  client.unDefinitionHandlers.attach('*', (u) => {
+    if (_.includes(['VTOL_GET_STATUS', 'VTOL_STATUS'], u.identifier)) {
+      process.exit();
+    }
+  });
+
   client.onReady(() => {
 
     client.bootstrap({'VTOL_GET_STATUS': {}}, ['VTOL_STATUS'], []).then(
@@ -194,7 +200,7 @@ function onUpdate() {
     } else if (!_.isUndefined(tmp.afterState) && tmp.afterState !== status.state && tmp.started) { // something is abnormal, we should have either wantsState or afterState as a state
       nextPromise = null;
       tmp.reject();
-      console.log('reject ' + JSON.stringify(tmp) + ' ' + JSON.stringify(uavo.data));
+      console.log('reject ' + JSON.stringify(tmp) + ' ' + JSON.stringify(status));
     } else if (!_.isUndefined(tmp.afterState) && tmp.afterState == status.state) {
       if (!tmp.started) {
         console.log('Started: ' + tmp.afterState);
