@@ -29,6 +29,10 @@ class UAVContainer {
     this.update(this.initialValue.value);
   }
 
+  forceDirty() {
+    this.dirty = true;
+  }
+
   done() {
     var value = _.cloneDeep(this.currentValue);
     value.timeTo = new Date().getTime();
@@ -68,6 +72,11 @@ class UAVWatcher {
         fn(container);
       }
     });
+  }
+
+  getInitialValue(identifier) {
+    var container = this.containers[identifier];
+    return container ? container.initialValue.value : {};
   }
 
   get(identifier) {
