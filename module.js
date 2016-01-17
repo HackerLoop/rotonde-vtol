@@ -146,37 +146,49 @@ client.actionHandlers.attach('VTOL_GOTO', (a) => {
 client.onReady(() => {
 
   // mute updates
-  const skippedModes = ['FLIGHTSTATUS', 'SYSTEMALARMS'];
+  const WATCHED_UAVO = ['FLIGHTSTATUS', 'SYSTEMALARMS', 'BAROALTITUDE', 'GCSRECEIVER', 'MANUALCONTROLSETTINGS'];
+
   client.definitionHandlers.attach('*', (definition) => {
     const identifier = definition.identifier;
+
     if (identifier.startsWith('SET_') && identifier.endsWith('META')) {
       const getterIdentifier = identifier.replace('SET_', 'GET_');
       const updateIdentifier = identifier.replace('SET_', '');
-      if (_.includes(skippedModes, updateIdentifier.replace('META', ''))) {
-        return;
-      }
-      client.sendAction(getterIdentifier, {});
-      client.eventHandlers.attachOnce(updateIdentifier, (e) => {
+      client.bootstrap(_.set({}, getterIdentifier, {}), [updateIdentifier], []).then((values) => {
+        let e = values[0];
+        let modes = e.data.modes & 207;
+        if (_.includes(WATCHED_UAVO, updateIdentifier.replace('META', ''))) {
+          modes = e.data.modes & 239;
+        }
+
         client.sendAction(identifier, {
-          "modes": e.data.modes & 207, "periodFlight": 0, "periodGCS": 0, "periodLog": 0,
+          "modes": modes, "periodFlight": 0, "periodGCS": 0, "periodLog": 0,
         });
       });
     }
   });
 
-  client.bootstrap({'GET_GCSRECEIVER': {}, 'GET_MANUALCONTROLSETTINGS': {}, 'GET_FLIGHTSTATUS': {}, 'GET_SYSTEMALARMS': {}}, ['GCSRECEIVER', 'MANUALCONTROLSETTINGS', 'FLIGHTSTATUS', 'SYSTEMALARMS'], ['GCSRECEIVER', 'SET_GCSRECEIVER', 'MANUALCONTROLSETTINGS', 'SET_MANUALCONTROLSETTINGS', 'FLIGHTSTATUS', 'SYSTEMALARMS']).then(
-    (values) => {
+  client.unDefinitionHandlers.attach('*', (u) => {
+    const identifier = u.identifier.replace(/(GET_|SET_|META)/g, '')
+    console.log(identifier);
+    if (_.includes(WATCHED_UAVO, identifier)) {
+      console.log('Lost one of the required definitions, exiting.');
+      process.exit();
+    }
+  });
+
+  client.bootstrap(_.reduce(WATCHED_UAVO, (result, identifier) => _.set(result, 'GET_' + identifier, {}), {}),
+                   WATCHED_UAVO,
+                   _.reduce(WATCHED_UAVO, (result, identifier) => result.push(identifier, 'GET_' + identifier, 'SET_' + identifier) && result, [])
+  ).then((values) => {
       // load initial values for the requested uavs
-      try {
+      console.log('subscribing to WATCHED_UAVO');
       _.forEach(values, (value) => {
         uavwatcher.push(value.identifier, value.data).done();
         client.eventHandlers.attach(value.identifier, (e) => {
           uavwatcher.push(e.identifier, e.data).done();
         });
       });
-      } catch (e) {
-        console.log(e);
-      }
 
       initStates();
     },
