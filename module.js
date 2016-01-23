@@ -151,15 +151,15 @@ client.onReady(() => {
     if (identifier.startsWith('SET_') && identifier.endsWith('META')) {
       const getterIdentifier = identifier.replace('SET_', 'GET_');
       const updateIdentifier = identifier.replace('SET_', '');
+      if (_.includes(WATCHED_UAVO, updateIdentifier.replace('META', '')) == false) {
+        return
+      }
       client.bootstrap(_.set({}, getterIdentifier, {}), [updateIdentifier], [], 5000).then((values) => {
         let e = values[0];
-        let modes = e.data.modes & 207;
-        if (_.includes(WATCHED_UAVO, updateIdentifier.replace('META', ''))) {
-          modes = e.data.modes & 239;
-        }
+        let modes = (e.data.modes & 207) | 16;
 
         let value = {
-          "modes": modes, "periodFlight": 0, "periodGCS": 0, "periodLog": 0,
+          "modes": modes, "periodFlight": 500, "periodGCS": 0, "periodLog": 0,
         };
         uavwatcher.push(updateIdentifier, value).done();
 
