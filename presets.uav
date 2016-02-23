@@ -1,6 +1,6 @@
 <uavobjects>
     <version>
-        <hardware revision="1" serial="35001e001447333039383532" type="92"/>
+        <hardware revision="1" serial="38003f000f47333039383532" type="92"/>
         <firmware date="20160106 18:58" hash="a64a9f6c" tag="next"/>
         <gcs date="20160106" hash="a64a9f6c" tag="next"/>
     </version>
@@ -9,7 +9,7 @@
             <field name="MotorInputOutputCurveFit" values="1,1"/>
             <field name="TimerUpdateFreq" values="50,50,50,50,50,50"/>
             <field name="ChannelMax" values="2000,2000,2000,2000,2000,2000,2000,2000,2000,2000"/>
-            <field name="ChannelNeutral" values="1152,1152,1152,1152,1000,1000,1000,1000,1000,1000"/>
+            <field name="ChannelNeutral" values="1045,1045,1045,1045,1000,1000,1000,1000,1000,1000"/>
             <field name="ChannelMin" values="1000,1000,1000,1000,1000,1000,1000,1000,1000,1000"/>
             <field name="TimerPwmResolution" values="1MHz,1MHz,1MHz,1MHz,1MHz,1MHz"/>
             <field name="ChannelType" values="PWM,PWM,PWM,PWM,PWM,PWM,PWM,PWM,PWM,PWM"/>
@@ -33,7 +33,7 @@
             <field name="AccelTau" values="0.100000001"/>
             <field name="VertPositionTau" values="2"/>
             <field name="YawBiasRate" values="9.99999997e-07"/>
-            <field name="BoardRotation" values="-22,-131,72"/>
+            <field name="BoardRotation" values="-86,-24,-83"/>
             <field name="ZeroDuringArming" values="TRUE"/>
             <field name="BiasCorrectGyro" values="TRUE"/>
             <field name="FilterChoice" values="CCC"/>
@@ -135,7 +135,7 @@
             <field name="Mixer10Vector" values="0,0,0,0,0"/>
         </object>
         <object id="0x63F2079A" name="ModuleSettings">
-            <field name="AdminState" values="Disabled,Enabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Enabled,Disabled,Enabled,Disabled,Enabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled"/>
+            <field name="AdminState" values="Disabled,Enabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Enabled,Disabled,Enabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled,Disabled"/>
             <field name="TelemetrySpeed" values="57600"/>
             <field name="GPSSpeed" values="57600"/>
             <field name="GPSDataProtocol" values="UBX"/>
@@ -155,15 +155,15 @@
             <field name="FlashOperation" values="NONE"/>
         </object>
         <object id="0xADB3B106" name="SensorSettings">
-            <field name="AccelBias" values="-0.178770095,-0.0306521766,0.100032032"/>
-            <field name="AccelScale" values="0.996752441,0.997570813,0.989265025"/>
+            <field name="AccelBias" values="-0.0695143044,-0.0330581218,-0.281024724"/>
+            <field name="AccelScale" values="0.99643302,0.998209059,0.99150306"/>
             <field name="GyroScale" values="1,1,1"/>
-            <field name="XGyroTempCoeff" values="-0.777710021,0,0,0"/>
-            <field name="YGyroTempCoeff" values="-1.15266001,0,0,0"/>
-            <field name="ZGyroTempCoeff" values="1.71464002,0,0,0"/>
-            <field name="MagBias" values="-82.4658966,-471.585693,-311.424957"/>
-            <field name="MagScale" values="1.23664188,1.23633885,1.06939089"/>
-            <field name="ZAccelOffset" values="-0.0385007672"/>
+            <field name="XGyroTempCoeff" values="-0.0418200009,0,0,0"/>
+            <field name="YGyroTempCoeff" values="0.620679975,0,0,0"/>
+            <field name="ZGyroTempCoeff" values="0.463369995,0,0,0"/>
+            <field name="MagBias" values="6.37793541,-383.253113,-222.876343"/>
+            <field name="MagScale" values="1.31908786,1.24136651,1.15772915"/>
+            <field name="ZAccelOffset" values="-0.0239973105"/>
         </object>
         <object id="0xCD238D1E" name="StabilizationSettings">
             <field name="ManualRate" values="150,150,360"/>
@@ -187,7 +187,7 @@
             <field name="AcroInsanityFactor" values="40"/>
             <field name="RollMax" values="90"/>
             <field name="PitchMax" values="90"/>
-            <field name="YawMax" values="104"/>
+            <field name="YawMax" values="180"/>
             <field name="RateExpo" values="0,0,0"/>
             <field name="AttitudeExpo" values="0,0,0"/>
             <field name="HorizonExpo" values="30,30,30"/>

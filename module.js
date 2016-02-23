@@ -143,7 +143,7 @@ localwatcher.push('VTOL_STATE', {
 client.onReady(() => {
 
   // mute updates
-  const WATCHED_UAVO = ['ACTUATORCOMMAND', 'FLIGHTSTATUS', 'SYSTEMALARMS', 'BAROALTITUDE', 'ALTITUDEHOLDDESIRED', 'GCSRECEIVER', 'MANUALCONTROLSETTINGS'];
+  const WATCHED_UAVO = ['ACTUATORCOMMAND', 'FLIGHTSTATUS', 'SYSTEMALARMS', 'BAROALTITUDE', 'ALTITUDEHOLDDESIRED', 'GCSRECEIVER', 'MANUALCONTROLSETTINGS', 'MANUALCONTROLCOMMAND'];
 
   client.definitionHandlers.attach('*', (definition) => {
     const identifier = definition.identifier;
@@ -183,6 +183,14 @@ client.onReady(() => {
       process.exit();
     }
   });
+  
+  /*client.eventHandlers.attach('MANUALCONTROLCOMMAND', (e) => {
+    console.log(e);
+    if (e.data.ArmSwitch == 'Armed') {
+      console.log('Hooman wants control back, exiting.');
+      process.exit(1);
+    }
+  });*/
 
   client.bootstrap(_.reduce(WATCHED_UAVO, (result, identifier) => _.set(result, 'GET_' + identifier, {}), {}),
                    WATCHED_UAVO,
@@ -394,16 +402,8 @@ MockStates.Waiting = (() => {
 
 let ErrorState = (() => {
   let hasAlarms = () => {
-    let error = false;
-    const systemalarms = uavwatcher.get('SYSTEMALARMS');
-    _.forEach(_.keys(systemalarms.Alarm), function(key) {
-      const status = systemalarms.Alarm[key];
-      if (status == 'Error' || status == 'Critical') {
-        console.error(key + ' : ' + status);
-        error = true;
-      }
-    });
-    return error;
+    const flightStatus = uavwatcher.get('FLIGHTSTATUS');
+    return flightStatus.ControlSource == 'Failsafe';
   }
   return {
     priority: 20,
