@@ -10,7 +10,7 @@ const UAVWatcher = require('./uavwatcher');
 const StateMachine = require('./state_machine');
 const newClient = require('rotonde-client/src/Client');
 
-const client = newClient('ws://127.0.0.1:4224/');
+const client = newClient('ws://rotonde:4224/');
 
 const uavwatcher = new UAVWatcher();
 const localwatcher = new UAVWatcher();
@@ -169,7 +169,7 @@ client.onReady(() => {
 
         client.sendAction(identifier, value);
       }, (errors) => {
-        console.log(errors);
+        console.log('bootstraping error: ', errors);
         process.exit()
       });
     }
@@ -184,13 +184,12 @@ client.onReady(() => {
     }
   });
   
-  /*client.eventHandlers.attach('MANUALCONTROLCOMMAND', (e) => {
-    console.log(e);
-    if (e.data.ArmSwitch == 'Armed') {
+  client.eventHandlers.attach('MANUALCONTROLCOMMAND', (e) => {
+    if (e.data.Channel.Arming > 800) {
       console.log('Hooman wants control back, exiting.');
       process.exit(1);
     }
-  });*/
+  });
 
   client.bootstrap(_.reduce(WATCHED_UAVO, (result, identifier) => _.set(result, 'GET_' + identifier, {}), {}),
                    WATCHED_UAVO,
@@ -210,7 +209,7 @@ client.onReady(() => {
       initStates();
     },
     (errors) => {
-      console.error(errors);
+      console.error('bootstraping error: ', errors);
       process.exit();
     }
   );
@@ -413,8 +412,8 @@ let ErrorState = (() => {
     start: () => {
       localwatcher.push('VTOL_STATUS', {state: 'ERROR'});
       undirtyWatcherAndSend();
-      process.exit();
       console.log('Started state ERROR');
+      process.exit();
     },
     update: hasAlarms,
   };
@@ -482,15 +481,23 @@ States.TakingOff = (() => {
     return {
       priority: 40,
       start() {
+	this.start = new Date().getTime();
         console.log('Started TakeOff stage');
         this.currentThrottle = -0.9;
         flightMode('AltitudeHold');
         setPeriodic('BAROALTITUDE', true, 50)
       },
       update() {
-        let altitude = uavwatcher.get('BAROALTITUDE');
-        this.currentThrottle += (0 - this.currentThrottle) * 0.05;
-        gcsReceiverChannel(0, this.currentThrottle);
+	let time = new Date().getTime();
+	if (time - this.start > 5000) {
+	  return false;
+	} else if (time - this.start > 2500) {
+	  gcsReceiverChannel(0, -0.25);
+	} else {
+	  let altitude = uavwatcher.get('BAROALTITUDE');
+	  this.currentThrottle += (0.7 - this.currentThrottle) * 0.1;
+	  gcsReceiverChannel(0, this.currentThrottle);
+	}
         return true;
       },
       end() {
@@ -506,7 +513,7 @@ States.TakingOff = (() => {
     },
     start: () => {
       machine = StateMachine.newMachine();
-      machine.addState(createTestActuators());
+      machine.setState(createTestActuators());
 
       localwatcher.push('VTOL_STATUS', {state: 'TAKINGOFF'});
       console.log('Started state TAKINGOFF');
@@ -523,27 +530,37 @@ States.TakingOff = (() => {
 })();
 
 States.Landing = (() => {
-  let working = false;
-  return {
-    priority: 10,
-    canTrigger: () => {
-      return shouldLand();
-    },
-    start: () => {
+    return {
+      priority: 10,
+	    canTrigger: () => {
+	      return shouldLand();
+	    },
+      start() {
       localwatcher.push('VTOL_STATUS', {state: 'LANDING'});
-      working = true;
-      setTimeout(() => {
-        working = false;
-      }, 3000);
       console.log('Started state LANDING');
-    },
-    update: () => {
-      return working;
-    },
-    end: () => {
-    }
-  };
-
+	this.start = new Date().getTime();
+        this.currentThrottle = -0.25;
+        flightMode('AltitudeHold');
+        setPeriodic('BAROALTITUDE', true, 50)
+      },
+      update() {
+	let time = new Date().getTime();
+	if (time - this.start > 4000) {
+	  return false;
+	} else if (time - this.start > 2000) {
+	  gcsReceiverChannel(0, -1);
+	} else {
+	  let altitude = uavwatcher.get('BAROALTITUDE');
+	  this.currentThrottle += (-0.7 - this.currentThrottle) * 0.1;
+console.log(this.currentThrottle);
+	  gcsReceiverChannel(0, this.currentThrottle);
+	}
+        return true;
+      },
+      end() {
+        setPeriodic('BAROALTITUDE', false, 0)
+      }
+  }
 })();
 
 States.Loitering = (() => {
@@ -671,64 +688,64 @@ function setupFC() {
     ArmedTimeout: 0,
     Arming: 'Always Armed',
     ChannelGroups: {
-      Accessory0: 'None',
-      Accessory1: 'None',
-      Accessory2: 'None',
-      Arming: 'None',
-      Collective: 'None',
-      FlightMode: 'None',
-      Pitch: 'GCS',
-      Roll: 'GCS',
+    Accessory0: 'S.Bus',
+    Accessory1: 'None',
+    Accessory2: 'None',
+    Arming: 'S.Bus',
+    Collective: 'None',
+    FlightMode: 'S.Bus',
+    Pitch: 'S.Bus',
+    Roll: 'S.Bus',
       Throttle: 'GCS',
-      Yaw: 'GCS'
+    Yaw: 'S.Bus'
     },
     ChannelMax: {
-      Accessory0: 0,
-      Accessory1: 0,
-      Accessory2: 0,
-      Arming: 0,
-      Collective: 0,
-      FlightMode: 0,
-      Pitch: GCSReceiverChannelValues.MAX,
-      Roll: GCSReceiverChannelValues.MAX,
+    Accessory0: 800,
+    Accessory1: 0,
+    Accessory2: 0,
+    Arming: 1696,
+    Collective: 0,
+    FlightMode: 1696,
+    Pitch: 1696,
+    Roll: 1696,
       Throttle: GCSReceiverChannelValues.MAX,
-      Yaw: GCSReceiverChannelValues.MAX
+    Yaw: 1696
     },
     ChannelMin: {
-      Accessory0: 0,
-      Accessory1: 0,
-      Accessory2: 0,
-      Arming: 0,
-      Collective: 0,
-      FlightMode: 0,
-      Pitch: GCSReceiverChannelValues.MIN,
-      Roll: GCSReceiverChannelValues.MIN,
+    Accessory0: 800,
+    Accessory1: 0,
+    Accessory2: 0,
+    Arming: 352,
+    Collective: 0,
+    FlightMode: 352,
+    Pitch: 352,
+    Roll: 352,
       Throttle: GCSReceiverChannelValues.MIN,
-      Yaw: GCSReceiverChannelValues.MIN
+    Yaw: 352
     },
     ChannelNeutral: {
-      Accessory0: 0,
-      Accessory1: 0,
-      Accessory2: 0,
-      Arming: 0,
-      Collective: 0,
-      FlightMode: 0,
-      Pitch: GCSReceiverChannelValues.MED,
-      Roll: GCSReceiverChannelValues.MED,
+    Accessory0: 800,
+    Accessory1: 65535,
+    Accessory2: 65535,
+    Arming: 1024,
+    Collective: 65535,
+    FlightMode: 1024,
+    Pitch: 1040,
+    Roll: 1025,
       Throttle: GCSReceiverChannelValues.MIN,
-      Yaw: GCSReceiverChannelValues.MED
+    Yaw: 1029
     },
     ChannelNumber: {
-      Accessory0: 0,
-      Accessory1: 0,
-      Accessory2: 0,
-      Arming: 0,
-      Collective: 0,
-      FlightMode: 0,
-      Pitch: 3,
-      Roll: 2,
+    Accessory0: 8,
+    Accessory1: 0,
+    Accessory2: 0,
+    Arming: 7,
+    Collective: 0,
+    FlightMode: 6,
+    Pitch: 2,
+    Roll: 1,
       Throttle: 1,
-      Yaw: 4
+    Yaw: 4
     },
     Deadband: 0,
     DisarmTime: '2000',

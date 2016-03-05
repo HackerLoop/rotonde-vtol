@@ -37,8 +37,10 @@ let newMachine = function() {
           assertState(currentState.next);
           currentState = currentState.next;
           currentState.start();
-          return;
-        }
+          return true;
+        } else if (states.length == 0) {
+	  return false;
+	}
         currentState = null;
       }
     }
@@ -59,6 +61,8 @@ let newMachine = function() {
       currentState = replacingState;
       currentState.start();
     }
+
+    return currentState;
   };
 
   machine.addState = function(state) {
@@ -71,6 +75,14 @@ let newMachine = function() {
       return;
     }
     currentState.end();
+  }
+
+  machine.setState = function(state) {
+    if (currentState) {
+	currentState.end();
+    }
+    currentState = state;
+    currentState.start();
   }
 
   return machine;
