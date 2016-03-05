@@ -2,7 +2,7 @@
 
 const _ = require('lodash');
 
-const newClient = require('rotonde-client/src/Client');
+const newClient = require('rotonde-client/node/rotonde-client');
 
 let status = {};
 
@@ -142,7 +142,7 @@ function idle() {
 // TODO there is a problem with having the client initialization in the module's abstraction,
 // this approach prevents having multiple module's abstaction to run in the same user module.
 // We chose to leave this for later, as a more global solution might arise.
-const client = newClient('ws://192.168.1.123:4224/');
+const client = newClient('ws://192.168.1.55:4224/');
 
 module.exports.onReady = function(onReady, onError, uavNames) {
   uavNames = uavNames || [];
